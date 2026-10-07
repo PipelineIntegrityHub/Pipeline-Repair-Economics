@@ -1,0 +1,1212 @@
+<title>Pipeline Repair Economics</title>
+<style>
+/* Layout: sticky KPI strip; full-width bench of global inputs, then pad cards, then results and a collapsible calculation trail. Single light theme by design. */
+:root{
+  --paper:#eef2f1; --panel:#ffffff; --ink:#15222a; --muted:#56666e; --rule:#d3dcdf;
+  --accent:#0a5872; --accent-soft:#e1edf1; --c2:#9a5b05; --c2-soft:#f6ecdc;
+  --pos:#1c7449; --pos-soft:#e2f1e8; --neg:#ad3d27; --neg-soft:#f7e5e0; --warn:#8f6206; --warn-soft:#f6edd8;
+  --f-display:"Avenir Next Condensed","Roboto Condensed","Arial Narrow","Helvetica Neue",Arial,sans-serif;
+  --f-body:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --f-num:ui-monospace,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+body{background:var(--paper);color:var(--ink);font-family:var(--f-body);font-size:14px;line-height:1.45}
+.wrap{max-width:1280px;margin:0 auto;padding-inline:16px;padding-block:20px 56px}
+h1,h2,h3,h4{font-family:var(--f-display);font-weight:700;letter-spacing:.01em;text-wrap:balance;margin:0}
+h1{font-size:30px;line-height:1.1}
+h2{font-size:20px;text-transform:uppercase;letter-spacing:.06em}
+h3{font-size:15px;text-transform:uppercase;letter-spacing:.06em}
+h4{font-size:14px;text-transform:uppercase;letter-spacing:.06em;color:var(--accent)}
+.eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);font-weight:600}
+.top{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,380px);gap:20px;align-items:center}
+.top p{margin:8px 0 0;color:var(--muted);max-width:66ch}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center}
+.btn{font:600 13px var(--f-body);border:1px solid var(--rule);background:var(--panel);color:var(--ink);padding:7px 12px;border-radius:6px;cursor:pointer}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+.btn.sm{font-size:12px;padding:5px 10px}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.pri:hover{color:#fff;opacity:.9}
+.btn.danger:hover{border-color:var(--neg);color:var(--neg)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn:focus-visible,.sw:focus-visible,input:focus-visible,select:focus-visible,.tab:focus-visible,summary:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.ex{font-size:11px;font-weight:700;color:var(--warn);background:var(--warn-soft);padding:2px 7px;border-radius:4px;text-transform:uppercase;letter-spacing:.06em}
+
+.schem{width:100%;height:auto;background:var(--panel);border:1px solid var(--rule);border-radius:8px}
+.schem text{font-family:var(--f-body);font-size:11px;fill:var(--muted)}
+.schem .lbl{fill:var(--ink);font-weight:700;font-size:11.5px}
+.schem .pipe{stroke:var(--muted);stroke-width:3.5;fill:none}
+.schem .pipe.hot{stroke:var(--neg);stroke-dasharray:7 4}
+.schem .box{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+.schem .box.off{fill:var(--paper);stroke:var(--rule)}
+.schem .hdr{fill:var(--ink)}
+.schem .hotl{fill:var(--neg);font-weight:700}
+
+.kpis{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;margin-top:18px;background:var(--panel);border:1px solid var(--rule);border-radius:10px;padding:10px 12px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;box-shadow:0 2px 10px rgba(21,34,42,.06)}
+.kpi{min-width:0}
+.kpi .v{font-family:var(--f-num);font-size:20px;font-weight:700;white-space:nowrap}
+.kpi .s{font-size:11.5px;color:var(--muted)}
+.v.pos,.pos-t{color:var(--pos)} .v.neg,.neg-t{color:var(--neg)}
+
+.sec{margin-top:26px}
+.sec-h{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+.sec-h p{margin:0;color:var(--muted);font-size:13px}
+.globals{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;align-items:start}
+.grp{background:var(--panel);border:1px solid var(--rule);border-radius:10px;padding:14px;min-width:0}
+.grp-n{font-size:12.5px;color:var(--muted);margin:2px 0 8px}
+.row{display:grid;grid-template-columns:minmax(0,1fr) 8.6rem 3.4rem;gap:8px;align-items:center;padding-block:4px}
+.row label,.row .lab{font-size:13px;min-width:0}
+.row.off label,.row.off .in,.row.off .lab{opacity:.42}
+.row.wide{grid-template-columns:minmax(0,1fr) 12rem}
+.in{display:flex;align-items:center;border:1px solid var(--rule);border-radius:6px;background:var(--panel);overflow:hidden;min-width:0}
+.in input,.in select{border:0;font:500 13.5px var(--f-num);font-variant-numeric:tabular-nums;padding:6px;width:100%;min-width:0;background:transparent;color:var(--ink);text-align:right}
+.in select{font-family:var(--f-body);text-align:left}
+.in.tx input{font-family:var(--f-body);text-align:left}
+.in .u{font-size:11px;color:var(--muted);padding:0 6px 0 2px;white-space:nowrap}
+.calc{font-size:12.5px;color:var(--muted);margin-top:6px}
+.calc b{color:var(--ink);font-family:var(--f-num)}
+.sw{justify-self:end;display:inline-flex;align-items:center;gap:5px;border:1px solid var(--rule);background:var(--paper);border-radius:999px;padding:2px 7px 2px 2px;cursor:pointer;font:700 10.5px var(--f-body);color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.sw .k{width:16px;height:16px;border-radius:50%;background:var(--rule);transition:background .15s}
+.sw[aria-checked="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.sw[aria-checked="true"] .k{background:var(--accent)}
+
+.pads{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;align-items:start}
+details.pad{background:var(--panel);border:1px solid var(--rule);border-radius:10px;min-width:0}
+details.pad.excl{opacity:.7}
+details.pad>summary{list-style:none;cursor:pointer;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;border-bottom:1px solid transparent}
+details.pad[open]>summary{border-bottom-color:var(--rule)}
+details.pad>summary::-webkit-details-marker{display:none}
+.pn{font-family:var(--f-display);font-weight:700;font-size:17px;text-transform:uppercase;letter-spacing:.04em}
+.pn::before{content:"+";display:inline-block;width:16px;color:var(--muted);font-family:var(--f-num)}
+details[open] .pn::before{content:"-"}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{font:600 11px var(--f-num);padding:2px 7px;border-radius:4px;background:var(--paper);color:var(--muted);white-space:nowrap}
+.chip.line{background:var(--neg-soft);color:var(--neg);font-family:var(--f-body)}
+.chip.pos{background:var(--pos-soft);color:var(--pos)} .chip.neg{background:var(--neg-soft);color:var(--neg)}
+.pad-b{padding:10px 14px 14px;display:grid;gap:4px}
+.stream{border-top:1px solid var(--rule);margin-top:8px;padding-top:10px}
+.stream-h{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.ylab{font-size:11.5px;color:var(--muted);margin:6px 0 4px}
+.ygrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:6px}
+.yc{display:grid;gap:2px;font-size:10.5px;color:var(--muted);font-weight:600}
+.yc input{border:1px solid var(--rule);border-radius:5px;font:500 13px var(--f-num);padding:5px;width:100%;min-width:0;text-align:right;color:var(--ink);background:var(--panel)}
+.yc.off input{opacity:.38;background:var(--paper)}
+.ygrid.off{opacity:.42}
+.pad-act{display:flex;gap:8px;justify-content:flex-end;margin-top:10px}
+
+.results{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;align-items:start}
+.card{background:var(--panel);border:1px solid var(--rule);border-radius:10px;padding:14px;min-width:0}
+.card.span{grid-column:1 / -1}
+.verdict{border-left:6px solid var(--muted)}
+.verdict.pos{border-left-color:var(--pos);background:linear-gradient(90deg,var(--pos-soft),var(--panel) 40%)}
+.verdict.warn{border-left-color:var(--warn);background:linear-gradient(90deg,var(--warn-soft),var(--panel) 40%)}
+.verdict.neg{border-left-color:var(--neg);background:linear-gradient(90deg,var(--neg-soft),var(--panel) 40%)}
+.pill{display:inline-block;font:700 11px var(--f-body);text-transform:uppercase;letter-spacing:.08em;padding:3px 9px;border-radius:999px;background:var(--paper);color:var(--muted)}
+.pill.pos{background:var(--pos);color:#fff} .pill.warn{background:var(--warn);color:#fff} .pill.neg{background:var(--neg);color:#fff}
+.verdict h2{margin-top:8px;text-transform:none;letter-spacing:0;font-size:22px}
+.verdict p{margin:6px 0 0;max-width:80ch}
+.verdict ul{margin:8px 0 0;padding-left:18px;display:grid;gap:3px}
+.tabs{display:flex;gap:4px;background:var(--paper);border-radius:8px;padding:3px;max-width:100%;flex-wrap:wrap}
+.tab{border:0;background:transparent;font:600 12.5px var(--f-body);padding:6px 10px;border-radius:6px;cursor:pointer;color:var(--muted)}
+.tab[aria-selected="true"]{background:var(--panel);color:var(--accent);box-shadow:0 1px 3px rgba(21,34,42,.12)}
+.card-h{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+.sub{font-size:12.5px;color:var(--muted);margin:0 0 6px}
+.chart{width:100%;height:auto;display:block}
+.chart text{font-family:var(--f-body);font-size:12px;fill:var(--ink)}
+.chart .ax{font-size:11px;fill:var(--muted)}
+.chart .vt{font-family:var(--f-num);font-size:11.5px}
+.chart .grid{stroke:var(--rule);stroke-width:1}
+.chart .zero{stroke:var(--muted);stroke-width:1}
+.chart .bp{fill:var(--pos)} .chart .bn{fill:var(--neg)} .chart .bt{fill:var(--accent)} .chart .bx{fill:var(--rule)} .chart .b2{fill:var(--c2)}
+.chart .tx{fill:var(--muted)}
+.chart .la{stroke:var(--accent);stroke-width:2.2;fill:none}
+.chart .lr{stroke:var(--c2);stroke-width:2.2;fill:none}
+.chart .fa{fill:var(--accent-soft)}
+.chart .da{fill:var(--accent)} .chart .dr{fill:var(--c2)}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:6px}
+.legend i{display:inline-block;width:14px;height:6px;vertical-align:middle;margin-right:5px;border-radius:2px}
+.tbl-w{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:12.5px}
+th,td{padding:6px 8px;text-align:right;border-bottom:1px solid var(--paper);white-space:nowrap}
+th{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600;vertical-align:bottom}
+th:first-child,td:first-child{text-align:left}
+td{font-family:var(--f-num);font-variant-numeric:tabular-nums}
+td.l{font-family:var(--f-body)}
+tr.tot td{font-weight:700;border-top:1px solid var(--rule)}
+.be{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.be div{border:1px solid var(--rule);border-radius:8px;padding:9px 10px;min-width:0}
+.be .k{font-size:11.5px;color:var(--muted)}
+.be .v{font-family:var(--f-num);font-size:17px;font-weight:700}
+
+.steps details{border:1px solid var(--rule);border-radius:8px;background:var(--panel);margin-top:8px}
+.steps summary{cursor:pointer;padding:10px 12px;font-weight:600;display:flex;gap:10px;align-items:baseline}
+.steps summary .no{font-family:var(--f-num);color:var(--accent);min-width:2.2em}
+.steps .sb{padding:4px 12px 14px;display:grid;gap:8px;font-size:13px}
+.steps .sb p{margin:0;max-width:90ch}
+.eq{font-family:var(--f-num);font-size:12.5px;background:var(--paper);border-radius:6px;padding:8px 10px;overflow-x:auto;white-space:pre}
+.steps h4{margin-top:6px}
+.scen textarea{width:100%;min-height:120px;font:12px var(--f-num);border:1px solid var(--rule);border-radius:6px;padding:8px;color:var(--ink);background:var(--panel)}
+.toast{position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--panel);padding:8px 14px;border-radius:8px;font-size:13px;z-index:20}
+
+@media (max-width:1100px){ .globals{grid-template-columns:repeat(2,minmax(0,1fr))} }
+@media (max-width:960px){
+  .top{grid-template-columns:minmax(0,1fr)}
+  .pads,.results{grid-template-columns:minmax(0,1fr)}
+  .be{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:620px){
+  h1{font-size:25px}
+  .globals{grid-template-columns:minmax(0,1fr)}
+  .kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:8px 10px}
+  .kpi .v{font-size:16px}
+  .kpi .s{font-size:10.5px}
+  .row{grid-template-columns:minmax(0,1fr) 8rem 3.4rem}
+  .row.wide{grid-template-columns:minmax(0,1fr)}
+  .be{grid-template-columns:minmax(0,1fr)}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+<style>
+.sel{border:1px solid var(--rule);border-radius:6px;font:600 12px var(--f-body);padding:4px 6px;background:var(--panel);color:var(--ink)}
+.chip.keep{background:var(--accent-soft);color:var(--accent);font-family:var(--f-body)}
+.chip.pa{background:var(--paper);color:var(--neg);font-family:var(--f-body)}
+.chip.best{background:var(--accent);color:#fff;font-family:var(--f-body)}
+.schem .pipe.dead{stroke:var(--rule)}
+.ans{margin-top:18px;background:var(--panel);border:1px solid var(--rule);border-radius:12px;padding:18px;display:grid;gap:14px}
+.ans.pos{border-left:6px solid var(--pos)} .ans.neg{border-left:6px solid var(--neg)} .ans.warn{border-left:6px solid var(--warn)}
+.ans h2{text-transform:none;letter-spacing:0;font-size:24px;line-height:1.2}
+.ans .lead{font-size:15px;max-width:80ch;margin:0}
+.sumt td.l{white-space:normal}
+.tip{display:inline-grid;place-items:center;width:16px;height:16px;margin-left:5px;border-radius:50%;border:1px solid var(--rule);background:var(--panel);color:var(--muted);font:700 10px/1 var(--f-body);cursor:help;vertical-align:1px;padding:0;text-transform:none;letter-spacing:0}
+.tip:hover,.tip:focus-visible{border-color:var(--accent);color:var(--accent);outline:none}
+#tipPop{position:fixed;z-index:40;background:var(--ink);color:#fff;padding:10px 12px;border-radius:8px;font-size:12.5px;line-height:1.45;display:grid;gap:6px;box-shadow:0 8px 28px rgba(21,34,42,.25)}
+#tipPop[hidden]{display:none!important}
+#tipPop .tex{color:#bfe0ea}
+.glossary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:0}
+.gl{background:var(--panel);border:1px solid var(--rule);border-radius:8px;padding:10px 12px;min-width:0}
+.gl dt{font-weight:700}
+.gl dd{margin:4px 0 0;font-size:13px;display:grid;gap:5px}
+.gl .tex{color:var(--muted)}
+.qa{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.qa>div{border:1px solid var(--rule);border-radius:8px;padding:10px 12px;background:var(--paper);min-width:0}
+.qa>div:first-child{grid-column:1 / -1;background:var(--accent-soft);border-color:var(--accent)}
+.qa .q{font:700 11px var(--f-body);text-transform:uppercase;letter-spacing:.08em;color:var(--accent)}
+.qa .a{margin-top:4px;font-size:13.5px;max-width:90ch}
+@media (max-width:760px){ .glossary,.qa{grid-template-columns:minmax(0,1fr)} }
+td.l{text-align:left}
+.sumt th:nth-child(2),.sumt th:nth-child(7),.sumt th:nth-child(9),#lvlTbl th:nth-child(12){text-align:left}
+.ans-grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:16px;align-items:start}
+.ledger td.l{white-space:normal}
+.ledger tr.sub td{color:var(--muted);font-size:12px}
+.ledger tr.sub td:first-child{padding-left:20px}
+.ledger th:nth-child(2),.ledger td:nth-child(2){background:var(--accent-soft)}
+.ledger th:nth-child(3),.ledger td:nth-child(3){background:var(--c2-soft)}
+.mets{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.met{border:1px solid var(--rule);border-radius:8px;padding:9px 11px;min-width:0}
+.met .k{font-size:11.5px;color:var(--muted)} .met .v{font-family:var(--f-num);font-size:19px;font-weight:700} .met .s{font-size:11.5px;color:var(--muted)}
+@media (max-width:960px){ .ans-grid{grid-template-columns:minmax(0,1fr)} }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <div class="eyebrow">Pipeline repair decision | pad group on one line to the midfield header</div>
+      <h1>Pipeline Repair Economics</h1>
+      <p>All pads share the line, so every pad shuts in for the repair and for any failure. The repair cost plus the production lost during the planned shutdown is weighed against the future production it preserves: current rates, refracs and development. The analysis runs at three levels: each pad alone, all pads combined, and doing nothing while carrying the risk of a failure. Each level gets a payback period and a break-even oil price over time.</p>
+      <div class="actions">
+        <button class="btn" type="button" id="btnCopy">Copy summary</button>
+        <button class="btn" type="button" id="btnReset">Reset to example</button>
+        <span class="ex" id="exTag">Example inputs</span>
+      </div>
+    </div>
+    <div id="schem"></div>
+  </header>
+
+  <div class="kpis" aria-live="polite">
+    <div class="kpi"><div class="eyebrow">Combined NPV of repair<button type="button" class="tip" data-tip="npv" aria-label="Explain NPV">?</button></div><div class="v" id="kA">-</div><div class="s" id="kAs">-</div></div>
+    <div class="kpi"><div class="eyebrow">Combined break-even oil price<button type="button" class="tip" data-tip="beprice" aria-label="Explain Break-even oil price">?</button></div><div class="v" id="kB">-</div><div class="s" id="kBs">-</div></div>
+    <div class="kpi"><div class="eyebrow">Repair vs do nothing<button type="button" class="tip" data-tip="donothing" aria-label="Explain Do nothing">?</button></div><div class="v" id="kR">-</div><div class="s" id="kRs">-</div></div>
+    <div class="kpi"><div class="eyebrow">Repair trigger<button type="button" class="tip" data-tip="trigger" aria-label="Explain Repair trigger">?</button></div><div class="v" id="kP">-</div><div class="s" id="kPs">-</div></div>
+  </div>
+
+  <section class="ans" id="ans" aria-label="Decision summary">
+    <div>
+      <div class="eyebrow" id="ansEye">Decision summary</div>
+      <h2 id="ansHead">-</h2>
+    </div>
+    <div class="qa" id="qa"></div>
+    <p class="lead" id="ansLead">-</p>
+    <div class="tbl-w"><table class="sumt" id="sumTbl"></table></div>
+    <p class="sub" id="ansNote" style="margin:0"></p>
+  </section>
+
+  <section class="sec" aria-label="Line, economics and failure inputs">
+    <div class="sec-h"><h2>Line and economics</h2><p>Settings shared by every pad on the line.</p></div>
+    <div class="globals" id="globals"></div>
+  </section>
+
+  <section class="sec" aria-label="Pads">
+    <div class="sec-h"><h2>Pads on the line</h2><div class="actions" style="margin:0"><span class="sub" id="padCount" style="margin:0"></span><button class="btn pri sm" type="button" id="btnAdd">Add pad</button></div></div>
+    <div class="pads" id="pads"></div>
+  </section>
+
+  <section class="sec" aria-label="Results">
+    <div class="sec-h"><h2>Results</h2><p>Break-even and payback over time, then the detail behind each level.</p></div>
+    <div class="results">
+      <div class="card span">
+        <h3>Repair timing: now or later?</h3>
+        <p class="sub" id="tmSub"></p>
+        <div id="tmChart"></div>
+        <div class="legend" id="tmLeg"></div>
+        <div class="tbl-w" style="margin-top:10px"><table id="tmTbl"></table></div>
+      </div>
+
+      <div class="card span">
+        <h3>Break-even oil price over time<button type="button" class="tip" data-tip="beprice" aria-label="Explain Break-even oil price">?</button></h3>
+        <p class="sub" id="beSub"></p>
+        <div id="beChart"></div>
+        <div class="legend" id="beLeg"></div>
+      </div>
+
+      <div class="card span">
+        <h3>Payback: production value preserved minus repair cost<button type="button" class="tip" data-tip="payback" aria-label="Explain Payback">?</button></h3>
+        <p class="sub">Cumulative discounted value at today's oil price, after paying the repair and shutdown at month 0. Each line crosses zero at its payback. Levels 1 and 2.</p>
+        <div id="pbChart"></div>
+        <div class="legend" id="pbLeg"></div>
+      </div>
+
+      <div class="card span">
+        <h3>Levels 1 and 2: pad and combined economics</h3>
+        <p class="sub">Each pad is tested alone: it carries the full repair cost and its own shutdown loss against its own future production. The combined row carries the repair once and the shutdown loss of every pad against the production of every pad. Present values over the evaluation period.</p>
+        <div class="tbl-w"><table id="lvlTbl"></table></div>
+      </div>
+
+      <div class="card span">
+        <h3>Level 3: do nothing and risk a failure<button type="button" class="tip" data-tip="donothing" aria-label="Explain Do nothing">?</button></h3>
+        <p class="sub" id="l3Sub"></p>
+        <div class="ans-grid">
+          <div class="tbl-w"><table class="ledger" id="ansTbl"></table></div>
+          <div class="mets" id="ansMets"></div>
+        </div>
+        <h4 style="margin-top:16px">Expected loss over time</h4>
+        <p class="sub">Where the red line rises above the blue line, doing nothing has cost more in expected failure losses than the repair would have.</p>
+        <div id="failChart"></div>
+        <div class="legend" id="failLeg"></div>
+        <div class="tbl-w" style="margin-top:12px"><table id="failYr"></table></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec" aria-label="Glossary">
+    <div class="sec-h"><h2>Glossary</h2><p>Every term on this page, with an example from the current inputs. Tap or hover any ? beside a label to see the same explanation in place.</p></div>
+    <dl class="glossary" id="gloss"></dl>
+  </section>
+
+  <section class="sec steps" aria-label="Calculation steps">
+    <div class="sec-h"><h2>Calculation steps</h2><p>Every number above, worked through with the current inputs. Open a step to see it.</p></div>
+    <div id="steps"></div>
+  </section>
+
+  <section class="sec scen" aria-label="Scenario data">
+    <details class="card">
+      <summary style="cursor:pointer;font-weight:600">Save or load a scenario</summary>
+      <p class="sub" style="margin-top:8px">Copy the scenario text to keep a case, or paste one back and load it. Inputs are also remembered in this browser.</p>
+      <textarea id="scenTxt" aria-label="Scenario text" spellcheck="false"></textarea>
+      <div class="actions"><button class="btn sm" type="button" id="btnScenCopy">Copy current scenario</button><button class="btn sm" type="button" id="btnScenLoad">Load from text</button><span class="sub" id="scenMsg" style="margin:0"></span></div>
+    </details>
+  </section>
+</div>
+<div id="tipPop" role="tooltip" hidden></div>
+
+<script>
+(function(){
+  "use strict";
+  var DPM = 365/12, MAXY = 20, MAXPADS = 10, KEY = "padRepairEcon.v3";
+
+  function fillA(n,v){ var a=[]; for(var i=0;i<n;i++) a.push(v); return a; }
+  function ex(arr){ var a=fillA(MAXY,0); for(var i=0;i<arr.length&&i<MAXY;i++) a[i]=+arr[i]||0; return a; }
+  function newPad(n){
+    return {name:"Pad "+n,inc:true,
+      base:{life:5,y:ex([100,85,72,61,52])},
+      ref:{on:false,cost:1000000,start:6,chance:70,down:30,life:5,y:ex([200,130,90,65,50])},
+      dev:{on:false,cost:0,start:12,chance:50,life:5,y:ex([150,105,75,55,40])}};
+  }
+  var DEF = {
+    g:{price:65,nri:80,tax:4.6,loe:18,disc:10,horizon:7,rc:60000,rDays:14,pofR:1,
+       pof:15,pofG:15,mode:"reactive",fFix:75000,fClean:150000,fReg:25000,fDays:14},
+    t:{tDisc:true,tRc:true,tRShut:true,tPofR:true,tPofG:true,tFFix:true,tFClean:true,tFReg:true,tFProd:true,
+       tRefrac:true,tDev:true,tCapex:true,tRefDown:true},
+    pads:[
+      {name:"Pad 1",inc:true,
+        base:{life:2,y:ex([50,42])},
+        ref:{on:true,cost:1200000,start:6,chance:70,down:30,life:5,y:ex([250,150,100,75,60])},
+        dev:{on:true,cost:0,start:12,chance:50,life:5,y:ex([150,105,75,55,40])}},
+      {name:"Pad 2",inc:true,
+        base:{life:7,y:ex([600,520,450,390,340,300,260])},
+        ref:{on:false,cost:2500000,start:9,chance:70,down:30,life:5,y:ex([300,200,150,110,80])},
+        dev:{on:false,cost:0,start:12,chance:50,life:5,y:ex([0])}},
+      {name:"Pad 3",inc:true,
+        base:{life:3,y:ex([6,5,4])},
+        ref:{on:false,cost:800000,start:6,chance:60,down:30,life:4,y:ex([80,50,35,25])},
+        dev:{on:false,cost:0,start:12,chance:50,life:5,y:ex([0])}}
+    ]
+  };
+  function clone(o){ return JSON.parse(JSON.stringify(o)); }
+  function mergePad(d,sp){
+    ["name","inc"].forEach(function(k){ if(sp && k in sp) d[k]=sp[k]; });
+    ["base","ref","dev"].forEach(function(st){
+      if(!sp || !sp[st]) return;
+      for(var k in d[st]){ if(k==="y"){ if(Array.isArray(sp[st].y)) d[st].y=ex(sp[st].y); } else if(k in sp[st]) d[st][k]=sp[st][k]; }
+    });
+    d.inc=!!d.inc; d.ref.on=!!d.ref.on; d.dev.on=!!d.dev.on; d.name=String(d.name).slice(0,40);
+    return d;
+  }
+  function normalize(s){
+    var o=clone(DEF), k;
+    if(s.g) for(k in o.g) if(k in s.g) o.g[k]=s.g[k];
+    if(s.t) for(k in o.t) if(k in s.t) o.t[k]=!!s.t[k];
+    if(Array.isArray(s.pads) && s.pads.length) o.pads=s.pads.slice(0,MAXPADS).map(function(sp,i){ return mergePad(newPad(i+1),sp); });
+    return o;
+  }
+  var S, view="A", openState={}, stepOpen={};
+  function load(){
+    S=clone(DEF);
+    try{ var s=JSON.parse(localStorage.getItem(KEY)||"null"); if(s && typeof s==="object"){ S=normalize(s); if(s.view==="R") view="R"; } }catch(e){ S=clone(DEF); }
+  }
+  function save(){ try{ var o=clone(S); o.view=view; localStorage.setItem(KEY, JSON.stringify(o)); }catch(e){} }
+
+  /* ---------- helpers ---------- */
+  function getP(path){ var ks=path.split("."), o={g:S.g,t:S.t,p:S.pads}[ks[0]]; for(var i=1;i<ks.length;i++){ if(o==null) return undefined; o=o[ks[i]]; } return o; }
+  function setP(path,v){ var ks=path.split("."), o={g:S.g,t:S.t,p:S.pads}[ks[0]]; for(var i=1;i<ks.length-1;i++) o=o[ks[i]]; o[ks[ks.length-1]]=v; }
+  function pid(path){ return "f-"+path.replace(/\./g,"-"); }
+  function esc(s){ return String(s).replace(/[&<>"]/g,function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]; }); }
+  function nf(v,d){ d=d||0; return (+v).toLocaleString("en-US",{maximumFractionDigits:d,minimumFractionDigits:d}); }
+  function $f(v){ var s=v<0?"-":"", a=Math.abs(v);
+    if(a>=1e6) return s+"$"+(a/1e6).toFixed(a>=1e7?1:2)+"MM";
+    if(a>=1e3) return s+"$"+(a/1e3).toFixed(a>=1e5?0:1)+"k";
+    return s+"$"+a.toFixed(0); }
+  function fm(v){ return (v<0?"-$":"$")+nf(Math.abs(v),0); }
+  function pc(v,d){ return nf(v*100,d==null?1:d)+"%"; }
+  function sum(arr,f){ return arr.reduce(function(a,r){ return a+f(r); },0); }
+
+  /* ---------- UI builders ---------- */
+  function sw(path,label){ var on=!!getP(path);
+    return '<button type="button" class="sw" role="switch" data-path="'+path+'" aria-checked="'+on+'" aria-label="'+esc(label||"Include")+'"><span class="k"></span><span class="st">'+(on?"On":"Off")+'</span></button>'; }
+  function nrow(path,label,unit,step,tg,deps){
+    var id=pid(path);
+    return '<div class="row" data-dep="'+esc((deps||"")+" "+(tg||""))+'"><label for="'+id+'">'+esc(label)+tip(tipFor(path))+'</label><div class="in"><input id="'+id+'" data-path="'+path+'" type="number" inputmode="decimal" step="'+step+'" min="0" value="'+getP(path)+'"><span class="u">'+esc(unit)+'</span></div>'+(tg?sw(tg,label):'<span></span>')+'</div>';
+  }
+  function trow(tg,label){ return '<div class="row"><span class="lab">'+esc(label)+'</span><span></span>'+sw(tg,label)+'</div>'; }
+  function selHTML(path,opts,id,label){ var v=getP(path), h='<select class="sel" id="'+id+'" data-path="'+path+'" aria-label="'+esc(label)+'">'; opts.forEach(function(o){ h+='<option value="'+o[0]+'"'+(o[0]===v?' selected':'')+'>'+esc(o[1])+'</option>'; }); return h+'</select>'; }
+  function srow(path,label,opts){ var id=pid(path); return '<div class="row wide"><label for="'+id+'">'+esc(label)+'</label><div class="in">'+selHTML(path,opts,id,label).replace('class="sel" ','')+'</div></div>'; }
+
+  function buildGlobals(){
+    var h='';
+    h+='<div class="grp"><h3>Economics</h3><p class="grp-n">Netback per barrel values every barrel in the model.</p>'+
+      nrow("g.price","Oil price","$/bbl",1)+nrow("g.nri","Net revenue interest","%",0.5)+nrow("g.tax","Severance / ad val. tax","%",0.1)+
+      nrow("g.loe","Lease operating expense","$/bbl",0.5)+nrow("g.disc","Discount rate","%/yr",0.5,"t.tDisc")+nrow("g.horizon","Evaluation horizon","yr",1)+
+      '<div class="calc">Netback'+tip("netback")+': <b id="nb">-</b> per bbl</div></div>';
+    h+='<div class="grp"><h3>Repair now</h3><p class="grp-n">One project. Every pad is shut in for the repair.</p>'+
+      nrow("g.rc","Repair cost","$",1000,"t.tRc")+nrow("g.rDays","Group shutdown for repair","days",1,"t.tRShut")+
+      nrow("g.pofR","Residual PoF after repair","%/yr",0.5,"t.tPofR")+'</div>';
+    h+='<div class="grp"><h3>Failure if not repaired</h3><p class="grp-n">A failure shuts in every producing pad on the line.</p>'+
+      nrow("g.pof","Probability of failure","%/yr",1)+nrow("g.pofG","PoF growth (corrosion)","%/yr",1,"t.tPofG")+
+      srow("g.mode","After a failure",[["reactive","Repair the line"],["abandon","Abandon all pads"]])+
+      nrow("g.fFix","Failure repair cost","$",1000,"t.tFFix")+nrow("g.fClean","Spill cleanup / environmental","$",5000,"t.tFClean")+
+      nrow("g.fReg","Regulatory / other","$",5000,"t.tFReg")+nrow("g.fDays","Group outage after failure","days",1,"t.tFProd")+'</div>';
+    h+='<div class="grp"><h3>Cases</h3><p class="grp-n">Switch whole cases on or off for every pad at once.</p>'+
+     
+      trow("t.tRefrac","Refracs")+trow("t.tDev","Development")+trow("t.tCapex","Charge refrac and development capex")+trow("t.tRefDown","Pad downtime during refrac")+'</div>';
+    document.getElementById("globals").innerHTML=h;
+  }
+  function streamHTML(P,k,title,note,opt){
+    var B=P+"."+k, dep=opt ? B+".on "+(k==="ref"?"t.tRefrac":"t.tDev") : "";
+    var h='<div class="stream"><div class="stream-h"><h4>'+title+'</h4>'+(opt?sw(B+".on",title):'')+'</div><p class="grp-n">'+note+'</p>';
+    if(k==="ref") h+=nrow(B+".cost","Refrac cost","$",10000,"",dep+" t.tCapex")+nrow(B+".start","Refrac complete at","month",1,"",dep)+nrow(B+".chance","Chance of success","%",5,"",dep)+nrow(B+".down","Pad downtime for refrac","days",1,"",dep+" t.tRefDown");
+    if(k==="dev") h+=nrow(B+".cost","Development capex","$",10000,"",dep+" t.tCapex")+nrow(B+".start","First oil at","month",1,"",dep)+nrow(B+".chance","Chance it is sanctioned","%",5,"",dep);
+    h+=nrow(B+".life","Producing life","yr",0.5,"",dep);
+    var Y=Math.ceil(S.g.horizon);
+    h+='<div class="ylab">Average rate by year, bopd'+(k==="base"?" (year 1 starts now)":" (year 1 starts at the month above)")+'</div><div class="ygrid" data-dep="'+dep+'">';
+    for(var y=0;y<Y;y++){ var p=B+".y."+y; h+='<label class="yc" data-life="'+B+'" data-y="'+y+'"><span>Y'+(y+1)+'</span><input id="'+pid(p)+'" data-path="'+p+'" type="number" inputmode="decimal" min="0" step="1" value="'+getP(p)+'"></label>'; }
+    return h+'</div></div>';
+  }
+  function padHTML(pd,j){
+    var P="p."+j, open=openState[j]!==false;
+    var h='<details class="pad'+(pd.inc?'':' excl')+'" data-j="'+j+'"'+(open?' open':'')+'><summary><span class="pn" id="pn-'+j+'">'+esc(pd.name)+'</span><span class="chips" id="chip-'+j+'"></span></summary><div class="pad-b">';
+    h+='<div class="row wide"><label for="'+pid(P+".name")+'">Pad name</label><div class="in tx"><input type="text" id="'+pid(P+".name")+'" data-path="'+P+'.name" maxlength="40" value="'+esc(pd.name)+'"></div></div>';
+    h+=trow(P+".inc","Include pad in model");
+    h+=streamHTML(P,"base","Base production","Existing wells on the pad.",false);
+    h+=streamHTML(P,"ref","Refrac","Incremental rate above base after the refrac. Capex is spent in full; production is risked by the chance of success.",true);
+    h+=streamHTML(P,"dev","Development","New wells tied into the pad. Capex and production are both risked by the chance it is sanctioned.",true);
+    h+='<div class="pad-act"><button class="btn sm" type="button" data-act="dup" data-j="'+j+'">Duplicate</button><button class="btn sm danger" type="button" data-act="del" data-j="'+j+'">Remove</button></div></div></details>';
+    return h;
+  }
+  function buildPads(){
+    document.getElementById("pads").innerHTML=S.pads.map(padHTML).join("");
+    document.getElementById("padCount").textContent=S.pads.length+" of "+MAXPADS+" pads";
+    document.getElementById("btnAdd").disabled=S.pads.length>=MAXPADS;
+  }
+  function depOn(list){ var ok=true; (list||"").split(/\s+/).forEach(function(p){ if(p && !getP(p)) ok=false; }); return ok; }
+  function syncState(){
+    document.querySelectorAll(".sw").forEach(function(b){ var on=!!getP(b.getAttribute("data-path")); b.setAttribute("aria-checked",on?"true":"false"); b.querySelector(".st").textContent=on?"On":"Off"; });
+    document.querySelectorAll(".row[data-dep]").forEach(function(r){ r.classList.toggle("off", !depOn(r.getAttribute("data-dep"))); });
+    document.querySelectorAll(".ygrid[data-dep]").forEach(function(r){ r.classList.toggle("off", !depOn(r.getAttribute("data-dep"))); });
+    document.querySelectorAll(".yc").forEach(function(c){ var life=+getP(c.getAttribute("data-life")+".life")||0; c.classList.toggle("off", +c.getAttribute("data-y") >= Math.ceil(life)); });
+    document.querySelectorAll("details.pad").forEach(function(d){ var j=+d.getAttribute("data-j"); d.classList.toggle("excl", !S.pads[j].inc); document.getElementById("pn-"+j).textContent=S.pads[j].name; });
+  }
+
+  /* ---------- model ---------- */
+  function st(s,m,start){ var k=m-start; if(k<0 || k>=s.life*12) return 0; var y=Math.floor(k/12); return y<MAXY ? (+s.y[y]||0) : 0; }
+
+  function model(){
+    var g=S.g, t=S.t;
+    var N=g.price*g.nri/100*(1-g.tax/100)-g.loe;
+    var M=Math.max(1,Math.round(g.horizon*12)), i=g.disc/100, m;
+    var df=[]; for(m=0;m<M;m++) df.push(t.tDisc ? Math.pow(1+i,-(m+0.5)/12) : 1);
+    var dfAt=function(mm){ return t.tDisc ? Math.pow(1+i,-mm/12) : 1; };
+    var P=[];
+    S.pads.forEach(function(pd,j){
+      if(!pd.inc) return;
+      var refOn=t.tRefrac&&pd.ref.on, devOn=t.tDev&&pd.dev.on, sm=Math.round(pd.ref.start), ds=Math.round(pd.dev.start);
+      var R={j:j,pd:pd,refOn:refOn,devOn:devOn,sm:sm,ds:ds,base:[],ref:[],refRaw:[],dev:[],devRaw:[],q:[],val:[],cap:[],down:[],cf:[],
+        pvBase:0,pvRef:0,pvDev:0,pvCap:0,pvDown:0,pvVal:0,pvNet:0,bbl:0,endM:0};
+      for(m=0;m<M;m++){
+        var b=st(pd.base,m,0), rr=refOn?st(pd.ref,m,sm):0, dd=devOn?st(pd.dev,m,ds):0;
+        var r=rr*pd.ref.chance/100, d=dd*pd.dev.chance/100, q=b+r+d;
+        var cap=0; if(t.tCapex){ if(refOn&&m===sm) cap+=pd.ref.cost; if(devOn&&m===ds) cap+=pd.dev.cost*pd.dev.chance/100; }
+        var dn=(refOn&&t.tRefDown&&m===sm) ? pd.ref.down*b*N : 0;
+        var val=q*DPM*N, cf=val-cap-dn;
+        if(q>0) R.endM=m+1;
+        R.base.push(b); R.refRaw.push(rr); R.ref.push(r); R.devRaw.push(dd); R.dev.push(d); R.q.push(q);
+        R.val.push(val); R.cap.push(cap); R.down.push(dn); R.cf.push(cf);
+        R.pvBase+=b*DPM*N*df[m]; R.pvRef+=r*DPM*N*df[m]; R.pvDev+=d*DPM*N*df[m];
+        R.pvCap+=cap*df[m]; R.pvDown+=dn*df[m]; R.pvVal+=val*df[m]; R.pvNet+=cf*df[m]; R.bbl+=q*DPM;
+      }
+      // value of keeping the pad producing, measured against shutting it in today
+      R.value = R.pvNet;
+      R.dcf=[]; for(m=0;m<M;m++) R.dcf.push(R.cf[m]*df[m]);
+      R.tail=new Array(M+1); R.tail[M]=0;
+      for(m=M-1;m>=0;m--) R.tail[m]=R.tail[m+1]+R.dcf[m];
+      for(m=0;m<M;m++) R.tail[m]=Math.max(0,R.tail[m]);
+      P.push(R);
+    });
+
+    function expLoss(pof0,grow){
+      var Sv=1, Y=Math.ceil(M/12), o={fix:0,clean:0,reg:0,fixedTot:0,own:P.map(function(){return 0;}),
+        fixedM:[],ownM:P.map(function(){return [];}),pfM:[],
+        yr:{py:[],h:[],pf:fillA(Y,0),surv:fillA(Y,0),fixed:fillA(Y,0),own:P.map(function(){return fillA(Y,0);})},pfail:0};
+      for(var m=0;m<M;m++){
+        var py=pof0*(grow?Math.pow(1+g.pofG/100,m/12):1); if(py>0.999) py=0.999;
+        var h=1-Math.pow(1-py,1/12), f=Sv*h; Sv*=1-h;
+        var d=df[m], y=Math.floor(m/12);
+        var fx=(g.mode==="reactive"&&t.tFFix)?g.fFix*d:0, cl=t.tFClean?g.fClean*d:0, rg=t.tFReg?g.fReg*d:0;
+        o.fix+=f*fx; o.clean+=f*cl; o.reg+=f*rg; o.fixedM.push(f*(fx+cl+rg)); o.yr.fixed[y]+=f*(fx+cl+rg); o.pfM.push(f);
+        P.forEach(function(r,ix){
+          var own=0;
+          if(t.tFProd) own = g.mode==="abandon" ? r.tail[m] : g.fDays*r.q[m]*N*d;
+          o.own[ix]+=f*own; o.ownM[ix].push(f*own); o.yr.own[ix][y]+=f*own;
+        });
+        if(m%12===0){ o.yr.py.push(py); o.yr.h.push(h); }
+        o.yr.pf[y]+=f; o.yr.surv[y]=Sv;
+      }
+      o.fixedTot=o.fix+o.clean+o.reg; o.pfail=1-Sv;
+      return o;
+    }
+    var base=expLoss(g.pof/100,t.tPofG), res=expLoss(t.tPofR?g.pofR/100:0,false);
+    var rc=t.tRc?g.rc:0;
+
+    P.forEach(function(r,ix){
+      r.ownBase=base.own[ix]; r.ownRes=res.own[ix]; r.ownAv=r.ownBase-r.ownRes;
+      r.shut0 = t.tRShut ? g.rDays*r.q[0]*N : 0;
+      r.econ = r.value - r.ownRes;
+      r.keep = true;
+    });
+
+    function evalSet(keep){
+      var K=P.filter(function(r,ix){ return keep[ix]; }), any=K.length>0, o={keep:keep,K:K,any:any};
+      o.stake=sum(K,function(r){return r.value;});
+      o.shut=sum(K,function(r){return r.shut0;});
+      o.bTot=any ? base.fixedTot+sum(K,function(r){return r.ownBase;}) : 0;
+      o.rTot=any ? res.fixedTot+sum(K,function(r){return r.ownRes;}) : 0;
+      o.rc=any?rc:0;
+      o.A=o.stake-o.rc-o.shut-o.rTot;          // repair, operate kept pads, vs shut-in today
+      o.RTF=o.stake-o.bTot;                    // no repair, operate same pads, vs shut-in today
+      o.R=o.A-o.RTF;                           // repair vs run-to-failure
+      // monthly cumulative
+      o.cumA=[]; o.cumR=[]; var runA=-(o.rc+o.shut), rb=0, rr=0;
+      for(var m=0;m<M;m++){
+        K.forEach(function(r){ runA+=r.dcf[m]; });
+        var fb=any?base.fixedM[m]:0, fr=any?res.fixedM[m]:0;
+        P.forEach(function(r,ix){ if(keep[ix]){ fb+=base.ownM[ix][m]; fr+=res.ownM[ix][m]; } });
+        rb+=fb; rr+=fr; (o.avM=o.avM||[]).push(fb-fr); (o.bM=o.bM||[]).push(fb); (o.rM=o.rM||[]).push(fr);
+        o.cumA.push(runA-rr); o.cumR.push(-(o.rc+o.shut)+rb-rr);
+      }
+      o.pay=-1; for(m=0;m<M;m++){ if(o.cumA[m]>=0){ o.pay=m+1; break; } }
+      o.start=-(o.rc+o.shut);
+      return o;
+    }
+    var allKeep=P.map(function(){return true;});
+    var plan=evalSet(allKeep), sAll=plan;
+    var opts=[
+      {id:"shut",l:"Shut in line now",v:0},
+      {id:"rtf",l:"No repair, run to failure",v:plan.RTF},
+      {id:"all",l:"Repair and keep producing",v:plan.A}];
+    var best=opts.reduce(function(a,b){ return b.v>a.v?b:a; });
+
+    // full-cost test, against the repair project cost
+    var pr={rc:rc,shut:plan.shut,resFixed:res.fixedTot,avFixed:base.fixedTot-res.fixedTot};
+    pr.thA=rc+plan.shut+res.fixedTot; pr.thR=rc+plan.shut-pr.avFixed;
+    P.forEach(function(r){ r.grossA=r.econ; r.grossR=r.ownAv; r.fullA=r.grossA-pr.thA; r.fullR=r.grossR-pr.thR; });
+
+    return {N:N,M:M,df:df,dfAt:dfAt,P:P,rc:rc,base:base,res:res,plan:plan,sAll:sAll,opts:opts,best:best,proj:pr};
+  }
+  function bisect(fn,lo,hi){
+    var flo=fn(lo), fhi=fn(hi);
+    if(flo>=0) return {v:lo,state:"low"};
+    if(fhi<0) return {v:hi,state:"high"};
+    for(var n=0;n<46;n++){ var mid=(lo+hi)/2; if(fn(mid)>=0) hi=mid; else lo=mid; }
+    return {v:hi,state:"ok"};
+  }
+  function withG(key,v,fn){ var old=S.g[key]; S.g[key]=v; var r=fn(model()); S.g[key]=old; return r; }
+
+  /* ---------- charts ---------- */
+  var PADCOL=["#2f6fd0","#2e8b57","#8a4fc7","#c96a1b","#c2417a","#5f7f1a","#178a9e","#9c4f2c","#5a63cf","#a78414"];
+  function niceTicks(lo,hi,n){
+    var span=hi-lo||1, step=Math.pow(10,Math.floor(Math.log10(span/n))), err=span/n/step;
+    if(err>=7.5) step*=10; else if(err>=3.5) step*=5; else if(err>=1.5) step*=2;
+    var t=[]; for(var v=Math.ceil(lo/step)*step; v<=hi+1e-9; v+=step) t.push(v); return t;
+  }
+  function px(v){ return "$"+nf(v,0); }
+  // series: {name,col,dash,w,y:[...] (index m -> value at end of month m+1, null for gap), start:value at month 0 or null, mark:{m,v}}
+  function lineChart(series,opt){
+    var W=680, H=opt.h||300, L=66, Rp=16, T=16, B=34, M=opt.M;
+    var lo=opt.lo, hi=opt.hi;
+    if(lo==null||hi==null){
+      lo=opt.zoom?Infinity:0; hi=opt.zoom?-Infinity:0;
+      series.forEach(function(s){ if(s.start!=null){ lo=Math.min(lo,s.start); hi=Math.max(hi,s.start); } s.y.forEach(function(v){ if(v!=null){ lo=Math.min(lo,v); hi=Math.max(hi,v); } }); });
+      (opt.refs||[]).forEach(function(r){ lo=Math.min(lo,r.y); hi=Math.max(hi,r.y); });
+      var pad=(hi-lo)*0.06||1; hi+=pad; if(lo<0||opt.zoom) lo-=opt.zoom?(hi-lo)*0.25:pad;
+    }
+    var x=function(m){ return L+m/M*(W-L-Rp); }, y=function(v){ return T+(hi-v)/(hi-lo)*(H-T-B); };
+    var s='<svg class="chart" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="'+esc(opt.aria)+'">';
+    niceTicks(lo,hi,5).forEach(function(v){ var yy=y(v).toFixed(1); s+='<line class="grid" x1="'+L+'" x2="'+(W-Rp)+'" y1="'+yy+'" y2="'+yy+'"></line><text class="ax" x="'+(L-6)+'" y="'+(+yy+4)+'" text-anchor="end">'+opt.fmt(v)+'</text>'; });
+    var yrs=M/12, stp=yrs>12?2:1;
+    for(var yr=0;yr<=yrs+1e-9;yr+=stp){ var xx=x(yr*12).toFixed(1); s+='<line class="grid" x1="'+xx+'" x2="'+xx+'" y1="'+(H-B)+'" y2="'+(H-B+4)+'"></line><text class="ax" x="'+xx+'" y="'+(H-B+16)+'" text-anchor="middle">'+(yr===0?"0":"Y"+yr)+'</text>'; }
+    s+='<text class="ax" x="'+((L+W-Rp)/2)+'" y="'+(H-2)+'" text-anchor="middle">'+esc(opt.xl||"Time from repair decision")+'</text>';
+    if(lo<0 && hi>0){ var z=y(0).toFixed(1); s+='<line class="zero" x1="'+L+'" x2="'+(W-Rp)+'" y1="'+z+'" y2="'+z+'"></line>'; }
+    (opt.refs||[]).forEach(function(r){ var yy=y(r.y).toFixed(1);
+      s+='<line x1="'+L+'" x2="'+(W-Rp)+'" y1="'+yy+'" y2="'+yy+'" style="stroke:var(--ink);stroke-width:1.5;stroke-dasharray:6 4"></line>';
+      s+='<text x="'+(r.left?L+6:W-Rp)+'" y="'+(r.below?(+yy+15):(+yy-6))+'" text-anchor="'+(r.left?"start":"end")+'" style="font-weight:700;font-size:11.5px;paint-order:stroke;stroke:var(--panel);stroke-width:4px">'+esc(r.label)+'</text>'; });
+    series.forEach(function(sr){
+      var d="", pen=false;
+      if(sr.start!=null){ d+="M"+x(0).toFixed(1)+" "+y(sr.start).toFixed(1); pen=true; }
+      sr.y.forEach(function(v,m){
+        if(v==null){ pen=false; return; }
+        d+=(pen?" L":"M")+x(m+1).toFixed(1)+" "+y(v).toFixed(1); pen=true;
+      });
+      if(d) s+='<path d="'+d+'" style="fill:none;stroke:'+sr.col+';stroke-width:'+(sr.w||2)+(sr.dash?';stroke-dasharray:'+sr.dash:'')+';stroke-linejoin:round"></path>';
+      if(sr.mark) s+='<circle cx="'+x(sr.mark.m).toFixed(1)+'" cy="'+y(sr.mark.v).toFixed(1)+'" r="4.5" style="fill:'+sr.col+';stroke:var(--panel);stroke-width:1.5"></circle>';
+    });
+    (opt.marks||[]).forEach(function(mk){ var cx=x(mk.m), cy=y(mk.v);
+      s+='<circle cx="'+cx.toFixed(1)+'" cy="'+cy.toFixed(1)+'" r="5.5" style="fill:'+mk.col+';stroke:var(--panel);stroke-width:2"></circle>';
+      s+='<text x="'+Math.min(W-Rp,Math.max(L,cx)).toFixed(1)+'" y="'+(mk.below?cy+21:cy-11).toFixed(1)+'" text-anchor="'+(cx>W-170?"end":cx<L+90?"start":"middle")+'" style="font-weight:700;font-size:11.5px;fill:'+mk.col+';paint-order:stroke;stroke:var(--panel);stroke-width:4px">'+esc(mk.label)+'</text>'; });
+    return s+'</svg>';
+  }
+  function legendHTML(items){
+    return items.map(function(it){
+      var sw=it.dash ? '<i style="height:0;background:none;border-top:3px dashed '+it.col+'"></i>' : '<i style="background:'+it.col+'"></i>';
+      return '<span>'+sw+esc(it.name)+'</span>';
+    }).join("");
+  }
+
+  function schematic(o){
+    var pads=S.pads, n=Math.max(1,pads.length), RH=34, H=Math.max(130,n*RH+40), W=380, mfhX=250, colX=150;
+    var keepById={}; if(o) o.P.forEach(function(r){ keepById[r.j]=r.keep; });
+    var s='<svg class="schem" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Schematic: all pads share the repaired line to the midfield header">', ys=[];
+    pads.forEach(function(pd,j){
+      var y=20+j*RH, cy=y+12, kept=pd.inc && keepById[j]!==false;
+      s+='<rect class="box'+(!pd.inc?' off':'')+'" x="8" y="'+y+'" width="104" height="24" rx="5"></rect>';
+      s+='<text class="lbl" x="60" y="'+(cy+4)+'" text-anchor="middle">'+esc(pd.name.length>13?pd.name.slice(0,12)+".":pd.name)+'</text>';
+      if(pd.inc && !kept) s+='<text x="116" y="'+(cy-6)+'" style="fill:var(--neg);font-size:9.5px;font-weight:700">shut in</text>';
+      s+='<path class="pipe'+(kept?' hot':' dead')+'" d="M112 '+cy+' H'+colX+'"></path>'; ys.push(cy);
+    });
+    var a=Math.min.apply(null,ys), b=Math.max.apply(null,ys), mid=(a+b)/2;
+    s+='<path class="pipe hot" d="M'+colX+' '+a+' V'+b+' M'+colX+' '+mid+' H'+mfhX+'"></path><text class="hotl" x="'+((colX+mfhX)/2)+'" y="'+(mid-7)+'" text-anchor="middle">repaired line</text>';
+    s+='<rect class="hdr" x="'+mfhX+'" y="'+(mid-24)+'" width="14" height="48" rx="3"></rect><text class="lbl" x="'+(mfhX+7)+'" y="'+(mid+38)+'" text-anchor="middle">MFH</text>';
+    s+='<path class="pipe" d="M'+(mfhX+14)+' '+mid+' H'+(W-8)+'"></path><text x="'+((mfhX+14+W)/2)+'" y="'+(mid-8)+'" text-anchor="middle">facility</text>';
+    return s+'</svg>';
+  }
+
+  /* ---------- three levels ---------- */
+  // NPV at any month is linear in netback: NPV(T) = c(T) + k(T) x netback.
+  // Two model runs (price and price + $10) give c and k exactly; break-even netback = -c / k.
+  function levels(o0){
+    var g=S.g, f=g.nri/100*(1-g.tax/100);
+    var o1=withG("price",g.price+10,function(m){ return m; });
+    var N0=o0.N, dN=o1.N-o0.N, M=o0.M, out=[];
+    function solve(c,k){
+      if(f<=0) return {st:"never"};
+      if(Math.abs(k)<1e-9) return {st:c>=0?"any":"never",dir:"above"};
+      var p=(-c/k+g.loe)/f;
+      if(k>0) return p<=0 ? {st:"any",dir:"above",p:0} : {st:"ok",dir:"above",p:p};
+      return p<=0 ? {st:"never",dir:"below"} : {st:"ok",dir:"below",p:p};
+    }
+    function mk(id,name,kind,col,fn){
+      var a=fn(o0), b=fn(o1), be=[], cs=[], ks=[], pay=-1;
+      for(var m=0;m<M;m++){
+        var k=dN?(b.net[m]-a.net[m])/dN:0, c=a.net[m]-k*N0;
+        cs.push(c); ks.push(k); be.push(solve(c,k));
+      }
+      // payback = first month from which NPV stays at or above zero for the rest of the period
+      for(var mm=M-1;mm>=0;mm--){ if(a.net[mm]>=0) pay=mm+1; else break; }
+      return {id:id,name:name,kind:kind,col:col,cost:a.cost,rc:a.rc,shut:a.shut,sbbl:a.sbbl,net:a.net,npv:a.net[M-1],value:a.net[M-1]+a.cost,pay:pay,be:be,c:cs,k:ks,beEnd:be[M-1]};
+    }
+    o0.P.forEach(function(r,ix){
+      out.push(mk("p"+ix,r.pd.name,"pad",PADCOL[ix%10],function(o){
+        var R=o.P[ix], c=o.rc+R.shut0, run=-c, net=[];
+        for(var m=0;m<o.M;m++){ run+=R.dcf[m]; net.push(run); }
+        return {cost:c,rc:o.rc,shut:R.shut0,sbbl:S.t.tRShut?S.g.rDays*R.q[0]:0,net:net};
+      }));
+    });
+    if(o0.P.length){
+      out.push(mk("all","All pads combined","comb","#15222a",function(o){
+        var c=o.rc+o.plan.shut, run=-c, net=[];
+        for(var m=0;m<o.M;m++){ o.P.forEach(function(R){ run+=R.dcf[m]; }); net.push(run); }
+        return {cost:c,rc:o.rc,shut:o.plan.shut,sbbl:S.t.tRShut?S.g.rDays*sum(o.P,function(R){return R.q[0];}):0,net:net};
+      }));
+      out.push(mk("fail","Repair vs do nothing","fail","#ad3d27",function(o){
+        var c=o.rc+o.plan.shut, run=-c, net=[];
+        for(var m=0;m<o.M;m++){ run+=o.plan.avM[m]; net.push(run); }
+        return {cost:c,rc:o.rc,shut:o.plan.shut,sbbl:S.t.tRShut?S.g.rDays*sum(o.P,function(R){return R.q[0];}):0,net:net};
+      }));
+    }
+    return out;
+  }
+  function beText(b,short){
+    if(!b) return "-";
+    if(b.st==="ok") return "$"+nf(b.p,2)+(short?"":"/bbl")+(b.dir==="below"?" or lower":"");
+    return b.st==="any" ? "any price" : "not reached";
+  }
+  function payText(m){
+    var yrs=nf(S.g.horizon,0)+" yr";
+    if(m<0) return "not within "+yrs;
+    if(m<=1) return "< 1 month";
+    if(m<24) return m+" months";
+    return nf(m/12,1)+" years";
+  }
+  function irrAnnual(up,flowsDisc,df){
+    var f=flowsDisc.map(function(v,m){ return df[m]>0 ? v/df[m] : v; });
+    var npv=function(ra){ var rm=Math.pow(1+ra,1/12)-1, s=-up; for(var m=0;m<f.length;m++) s+=f[m]/Math.pow(1+rm,m+0.5); return s; };
+    if(up<=0) return {state:"free"};
+    if(npv(-0.99)<0) return {state:"low"};
+    if(npv(100)>0) return {state:"high"};
+    var lo=-0.99, hi=100; for(var n=0;n<80;n++){ var mid=(lo+hi)/2; if(npv(mid)>0) lo=mid; else hi=mid; }
+    return {state:"ok",v:(lo+hi)/2};
+  }
+  function eventCost(o){
+    var g=S.g, t=S.t, fx=((g.mode==="reactive"&&t.tFFix)?g.fFix:0)+(t.tFClean?g.fClean:0)+(t.tFReg?g.fReg:0), ev=[];
+    for(var m=0;m<o.M;m++){
+      var prod=0;
+      if(t.tFProd) prod = g.mode==="reactive" ? g.fDays*sum(o.P,function(r){return r.q[m];})*o.N*o.df[m] : sum(o.P,function(r){return r.tail[m];});
+      ev.push(fx*o.df[m]+prod);
+    }
+    return {fixed:fx,pv:ev};
+  }
+
+  /* ---------- glossary and tooltips ---------- */
+  var CTX=null;
+  function firstRef(o){ for(var i=0;i<o.P.length;i++){ if(o.P[i].refOn) return o.P[i]; } return null; }
+  var GL={
+    netback:{term:"Netback",def:"Cash the operator keeps on each gross barrel after royalty (NRI), production taxes and lease operating expense. Every barrel in the model is valued at this rate.",
+      ex:function(c){ var g=S.g; return "$"+nf(g.price,2)+" x "+nf(g.nri,1)+"% NRI x (1 - "+nf(g.tax,1)+"% tax) - $"+nf(g.loe,2)+" LOE = $"+nf(c.o.N,2)+" per barrel."; }},
+    pv:{term:"Present value (PV)",def:"Future cash converted to today's dollars using the discount rate. A dollar received later is worth less than a dollar today, so later production counts for less.",
+      ex:function(c){ var d=S.t.tDisc?S.g.disc:0, v=100000*Math.pow(1+d/100,-3); return "$100,000 received 3 years from now at "+nf(d,1)+"%/yr is worth "+fm(v)+" today."; }},
+    horizon:{term:"Evaluation period",def:"How far into the future the model counts production, failures and costs. Anything after the period is ignored. A longer period gives the repair more time to pay back and the line more time to fail.",
+      ex:function(c){ return "The period is "+nf(S.g.horizon,0)+" years, which is "+c.o.M+" monthly steps."; }},
+    risked:{term:"Risked rate",def:"The rate you enter, multiplied by the chance it happens. It is the average outcome across many similar refracs or wells, not the rate a single success would give. The raw rate, shown in brackets in the calculation steps, is what you get if it works.",
+      ex:function(c){ var r=firstRef(c.o); if(!r) return "A refrac entered at 200 bopd with a 70% chance of success is carried as 200 x 70% = 140 bopd risked."; var y=+r.pd.ref.y[0]||0; return r.pd.name+" refrac year 1 is entered at "+nf(y)+" bopd with a "+nf(r.pd.ref.chance)+"% chance of success, so the model carries "+nf(y)+" x "+nf(r.pd.ref.chance)+"% = "+nf(y*r.pd.ref.chance/100,1)+" bopd risked."; }},
+    chance:{term:"Chance of success / sanction",def:"Your estimate of the probability that a refrac works, or that a development is approved and drilled. Production from the case is multiplied by this chance. Refrac cost is charged in full, because you pay for the job whether or not it works; development capex is multiplied by the chance, because the money is only spent if it is sanctioned.",
+      ex:function(c){ return "A $1,000,000 refrac with a 70% chance of success: cost $1,000,000, production x 0.70."; }},
+    base:{term:"Base PV",def:"Present value of the production you already have, at the rates entered for each year, after LOE and taxes.",
+      ex:function(c){ var r=c.o.P[0]; return r ? r.pd.name+" base production is worth "+fm(r.pvBase)+" over the period." : "-"; }},
+    capexdown:{term:"Capex + downtime",def:"Money spent to get the refrac and development barrels: refrac cost, development capex (risked) and the base production lost while the pad is down for the refrac.",
+      ex:function(c){ var r=firstRef(c.o); return r ? r.pd.name+": "+fm(r.pvCap)+" capex + "+fm(r.pvDown)+" refrac downtime (PV)." : "No refrac or development is switched on."; }},
+    value:{term:"Value preserved",def:"The discounted net cash the pads will earn because the line stays in service: base + refrac + development production, less refrac and development spend. Without the repair this value is at risk.",
+      ex:function(c){ return "All pads together: "+fm(c.comb.value)+" over "+nf(S.g.horizon,0)+" years."; }},
+    shutloss:{term:"Shutdown loss",def:"Production lost while the line is shut in for the planned repair. It is treated as lost, not deferred. Shutdown days x production rate at the time of the repair x netback.",
+      ex:function(c){ var q=sum(c.o.P,function(r){return r.q[0];}); return nf(S.g.rDays)+" days x "+nf(q,1)+" bopd x $"+nf(c.o.N,2)+" = "+fm(c.comb.shut)+" if the repair is done now."; }},
+    cost:{term:"Total repair cost",def:"Direct repair cost plus the shutdown loss. This is the full price of doing the work, and the number every benefit is compared against.",
+      ex:function(c){ return fm(c.comb.rc)+" repair + "+fm(c.comb.shut)+" shutdown = "+fm(c.comb.cost)+"."; }},
+    npv:{term:"NPV",def:"Net present value: everything the decision brings in, minus everything it costs, all in today's dollars. Positive means the decision creates value over the period.",
+      ex:function(c){ return "All pads combined: "+fm(c.comb.value)+" value preserved - "+fm(c.comb.cost)+" total repair cost = "+fm(c.comb.npv)+"."; }},
+    payback:{term:"Payback",def:"The month from which cumulative value stays above the money spent. A refrac or development spend later on can push value back below zero, so payback is the point after which it stays positive.",
+      ex:function(c){ return "Combined: "+payText(c.comb.pay)+". Repair versus do nothing: "+payText(c.fail.pay)+"."; }},
+    beprice:{term:"Break-even oil price",def:"The oil price at which the value gained by a given date exactly repays the repair and shutdown. Below it (or above it, where marked 'or lower') the case loses money. Read along the chart to see how the break-even price falls as more months of production are counted.",
+      ex:function(c){ return "Combined over "+nf(S.g.horizon,0)+" years: "+beText(c.comb.beEnd)+". Today's price is $"+nf(S.g.price,2)+", so the margin of safety is $"+nf(Math.max(0,S.g.price-(c.comb.beEnd.p||0)),2)+"/bbl."; }},
+    pof:{term:"Probability of failure (PoF)",def:"The chance per year that the line fails (leaks or ruptures) if nothing is done. It comes from your integrity assessment: corrosion rate, remaining wall, failure history.",
+      ex:function(c){ return nf(S.g.pof,1)+"%/yr means about a 1-in-"+nf(100/Math.max(0.1,S.g.pof),0)+" chance of failing in any given year at today's condition."; }},
+    pofg:{term:"PoF growth",def:"How fast the yearly PoF rises as the wall thins. Each year the PoF is multiplied by (1 + growth).",
+      ex:function(c){ var g=S.g, gr=S.t.tPofG?g.pofG:0; return nf(g.pof,1)+"%/yr growing "+nf(gr,0)+"%/yr becomes "+nf(g.pof*Math.pow(1+gr/100,2),1)+"%/yr in year 3 and "+nf(Math.min(99.9,g.pof*Math.pow(1+gr/100,4)),1)+"%/yr in year 5."; }},
+    pofr:{term:"Residual PoF",def:"The chance per year that the line still fails after the repair. A repair lowers risk; it rarely removes it.",
+      ex:function(c){ return nf(S.t.tPofR?S.g.pofR:0,1)+"%/yr after repair, compared with "+nf(S.g.pof,1)+"%/yr today."; }},
+    chancefail:{term:"Chance of failure in the period",def:"Probability that the line fails at least once before the end of the evaluation period, with PoF growth included. Only the first failure is counted.",
+      ex:function(c){ return pc(c.o.base.pfail,0)+" over "+nf(S.g.horizon,0)+" years if nothing is done; "+pc(c.o.res.pfail,0)+" after the repair."; }},
+    event:{term:"Cost of one failure",def:"What a single failure costs when it happens: failure repair + production lost on every pad during the unplanned outage + cleanup + regulatory fines. Shown in today's dollars.",
+      ex:function(c){ var g=S.g, q=sum(c.o.P,function(r){return r.q[0];}); return "Today: "+fm(c.ev.fixed)+" fixed + "+(g.mode==="reactive"?nf(g.fDays)+" days x "+nf(q,1)+" bopd x $"+nf(c.o.N,2):"all remaining production")+" = "+fm(c.ev.pv[0])+"."; }},
+    exploss:{term:"Expected loss",def:"The failure cost you should budget for on average: for each month, the chance the line first fails that month x what a failure would cost then, added up. It is smaller than the cost of one failure because the failure may never happen.",
+      ex:function(c){ return pc(c.o.base.pfail,0)+" chance of failing, failure cost about "+fm(c.ev.pv[0])+" falling over time as production declines: expected loss "+fm(c.o.plan.bTot)+"."; }},
+    avoided:{term:"Expected loss avoided",def:"Expected loss if nothing is done, minus expected loss with the lower residual risk after the repair. This is the risk benefit of repairing.",
+      ex:function(c){ return fm(c.o.plan.bTot)+" - "+fm(c.o.plan.rTot)+" = "+fm(c.o.plan.bTot-c.o.plan.rTot)+"."; }},
+    ratio:{term:"Risk-reward ratio",def:"Expected failure cost avoided for every $1 of total repair cost, over the next evaluation period. Above 1.0 the repair pays for itself on failure risk. Below 1.0 keeping the line running is cheaper in expected terms; the repair is then justified only by the production it keeps or by a lower tolerance for risk.",
+      ex:function(c){ var t=c.tm; return "Today: "+nf(t.ratio[0],2)+". "+(t.T>0?"It reaches 1.0 in "+monthText(t.T)+".":t.T===0?"Already above 1.0.":"It stays below 1.0 in the look-ahead."); }},
+    consq:{term:"Consequence ratio",def:"Cost of one failure divided by the total repair cost. It answers: if the line does fail, how many repairs would that failure have paid for?",
+      ex:function(c){ return fm(c.ev.pv[0])+" / "+fm(c.comb.cost)+" = "+nf(c.comb.cost>0?c.ev.pv[0]/c.comb.cost:0,2)+" x."; }},
+    irr:{term:"Rate of return (IRR)",def:"The yearly interest rate that the repair earns on its cost from the expected failure losses it avoids. Compare it with your company's hurdle rate.",
+      ex:function(c){ return "If IRR is 5%/yr and the hurdle is 10%/yr, the repair does not clear the hurdle on risk alone."; }},
+    bepof:{term:"PoF needed today",def:"A what-if: the yearly PoF that, if it applied today, would make repairing now and keeping the line running cost the same. It is not a level to wait for. The repair trigger shows when your PoF is expected to get there.",
+      ex:function(c){ return "Repairing today would pay on risk if PoF were already "+c.pTxt+"; your input is "+nf(S.g.pof,1)+"%/yr."; }},
+    donothing:{term:"Do nothing (run to failure)",def:"Keep producing without the repair, accept the failure risk, and fix the line only if it fails. It saves the repair and shutdown now but carries the expected loss.",
+      ex:function(c){ return "Repair minus do nothing over the period: "+fm(c.fail.npv)+(c.fail.npv>=0?" in favour of repairing.":" in favour of doing nothing."); }},
+    timing:{term:"Repair then vs keep running",def:"For each month you could decide in, two costs over the next evaluation period, in that month's dollars and assuming no failure yet: the certain cost of repairing then (repair + shutdown at that month's rates + remaining risk), and the expected failure cost of keeping the line running.",
+      ex:function(c){ var t=c.tm; return "Today: repair "+fm(t.rep[0])+" vs keep running "+fm(t.rtf[0])+"."; }},
+    trigger:{term:"Repair trigger",def:"The first month in which repairing costs no more than keeping the line running, looking ahead one evaluation period from that month. It moves with PoF growth, production rates and oil price. Until then, waiting is the cheaper choice in expected terms; after it, every month of delay adds cost.",
+      ex:function(c){ var t=c.tm; return t.T===0 ? "The trigger is now: PoF "+nf(t.pofAt(0),1)+"%/yr already justifies the repair." : t.T>0 ? "Month "+t.T+": PoF grows from "+nf(t.pofAt(0),1)+"%/yr today to about "+nf(t.pofAt(t.T),1)+"%/yr, and the expected failure cost overtakes the repair cost. Chance of failing before then: "+pc(1-t.Sv[t.T],0)+"." : "Not within "+nf(t.Ts/12,0)+" years at your inputs."; }},
+    kc:{term:"k and c",def:"NPV at a given month is a straight line in netback: NPV = c + k x netback. k is how much NPV changes for each $1/bbl of netback (in effect, the discounted barrels at stake). c is the NPV if netback were zero (the fixed dollar costs).",
+      ex:function(c){ var e=c.o.M-1; return "Combined at the end of the period: k = "+nf(c.comb.k[e],0)+", c = "+fm(c.comb.c[e])+"."; }}
+  };
+  function tip(k){ return GL[k] ? '<button type="button" class="tip" data-tip="'+k+'" aria-label="Explain '+esc(GL[k].term)+'">?</button>' : ''; }
+  function T(label,k){ return label+tip(k); }
+  function monthText(m){ if(m<=0) return "now"; var y=Math.floor(m/12), mo=m%12, p=[]; if(y) p.push(y+" yr"); if(mo) p.push(mo+" mo"); return "month "+m+" ("+p.join(" ")+")"; }
+  function tipFor(path){
+    if(/\.chance$/.test(path)) return "chance";
+    return {"g.pof":"pof","g.pofG":"pofg","g.pofR":"pofr","g.disc":"pv","g.horizon":"horizon","g.rDays":"shutloss","g.rc":"cost","g.fDays":"event"}[path]||"";
+  }
+  function showTip(btn){
+    var k=btn.getAttribute("data-tip"), e=GL[k], pop=document.getElementById("tipPop"); if(!e||!pop) return;
+    var ex=""; try{ ex=CTX?e.ex(CTX):""; }catch(err){ ex=""; }
+    pop.innerHTML='<b>'+esc(e.term)+'</b><span>'+esc(e.def)+'</span>'+(ex?'<span class="tex">Example: '+esc(ex)+'</span>':'');
+    pop.hidden=false;
+    var r=btn.getBoundingClientRect(), w=Math.min(320,window.innerWidth-24), left=Math.max(12,Math.min(window.innerWidth-w-12,r.left+r.width/2-w/2));
+    pop.style.width=w+"px"; pop.style.left=left+"px";
+    var top=r.bottom+8; pop.style.top=top+"px";
+    var ph=pop.offsetHeight; if(top+ph>window.innerHeight-8 && r.top-ph-8>8) pop.style.top=(r.top-ph-8)+"px";
+    tipBtn=btn;
+  }
+  var tipBtn=null, tipPinned=false;
+  function hideTip(){ var pop=document.getElementById("tipPop"); if(pop) pop.hidden=true; tipBtn=null; tipPinned=false; }
+  function renderGlossary(){
+    var keys=["netback","pv","horizon","risked","chance","base","capexdown","value","shutloss","cost","npv","payback","beprice","pof","pofg","pofr","chancefail","event","exploss","avoided","ratio","consq","irr","bepof","donothing","timing","trigger","kc"];
+    document.getElementById("gloss").innerHTML=keys.map(function(k){ var e=GL[k], ex=""; try{ ex=e.ex(CTX); }catch(err){}
+      return '<div class="gl" id="gl-'+k+'"><dt>'+esc(e.term)+'</dt><dd>'+esc(e.def)+(ex?'<span class="tex">Example: '+esc(ex)+'</span>':'')+'</dd></div>'; }).join("");
+  }
+
+  /* ---------- repair timing (rolling look-ahead) ---------- */
+  // At every future decision month t (if the line has not failed yet), compare over the next H years:
+  //   repair then  = repair + shutdown at the rates of that month + residual risk after the repair
+  //   keep running = expected failure cost with the PoF of that time, growing as entered
+  // The repair trigger is the first month where repairing costs no more than keeping the line running.
+  function timing(o){
+    var g=S.g, t=S.t, H=o.M, Ts=Math.min(240,Math.max(H,120)), He=(H+Ts)/12, m, k;
+    var oe=withG("horizon",He,function(x){ return x; }), Me=oe.M, N=oe.N, df=oe.df;
+    var pf=oe.base.pfM, Sv=[1]; for(m=0;m<Me;m++) Sv.push(Math.max(0,Sv[m]-pf[m]));
+    var fx=((g.mode==="reactive"&&t.tFFix)?g.fFix:0)+(t.tFClean?g.fClean:0)+(t.tFReg?g.fReg:0);
+    var cum=oe.P.map(function(r){ var c=[0]; for(var i=0;i<Me;i++) c.push(c[i]+r.dcf[i]); return c; });
+    var qd=function(d){ return sum(oe.P,function(r){ return r.q[Math.min(d,Me-1)]; }); };
+    function evW(m,e){ // PV cost of a failure in month m, production loss counted to the end of the window e
+      var prod=0;
+      if(t.tFProd){
+        if(g.mode==="reactive") prod=g.fDays*qd(m)*N*df[m];
+        else oe.P.forEach(function(r,ix){ prod+=Math.max(0,cum[ix][e]-cum[ix][m]); });
+      }
+      return fx*df[m]+prod;
+    }
+    var hr=t.tPofR?1-Math.pow(1-g.pofR/100,1/12):0, rc=t.tRc?g.rc:0;
+    var res={rep:[],rtf:[],ratio:[],plan:[],shut:[],R:[],dft:[],ev:[],pfWin:[]};
+    for(var d=0;d<=Ts;d++){
+      var e=Math.min(Me,d+H), dft=t.tDisc?Math.pow(1+g.disc/100,-d/12):1;
+      var sh=t.tRShut?g.rDays*qd(d)*N*dft:0, pl=rc*dft+sh;
+      var R=0, sr=1; for(m=d;m<e;m++){ R+=sr*hr*evW(m,e); sr*=1-hr; }
+      var B=0, pw=0; for(m=d;m<e;m++){ B+=pf[m]*evW(m,e); pw+=pf[m]; }
+      var cond=Sv[d]>1e-9?1/Sv[d]:0; B*=cond; pw*=cond;
+      res.rep.push(pl+R); res.rtf.push(B); res.plan.push(pl); res.shut.push(sh); res.R.push(R); res.dft.push(dft);
+      res.ratio.push(pl>0?(B-R)/pl:0); res.ev.push(evW(d,e)); res.pfWin.push(pw);
+    }
+    // only consider decision months while the pads still produce and the line is still likely to be intact
+    var dEnd=Ts; for(d=1;d<=Ts;d++){ if(qd(d)<=0 || Sv[d]<0.01){ dEnd=d-1; break; } }
+    Ts=Math.max(1,dEnd);
+    var T=-1; for(d=0;d<=Ts;d++){ if(res.rep[d]<=res.rtf[d]+1e-6){ T=d; break; } }
+    var Wc=function(d){ var s=0; for(var i=0;i<d;i++) s+=pf[i]*evW(i,Math.min(Me,i+H)); return s; };
+    res.H=H; res.Ts=Ts; res.T=T; res.Sv=Sv; res.qd=qd; res.Wc=Wc;
+    res.pofAt=function(d){ return Math.min(99.9, g.pof*(t.tPofG?Math.pow(1+g.pofG/100,d/12):1)); };
+    res.inT=function(v,d){ return v/res.dft[d]; };
+    return res;
+  }
+  function hy(){ return nf(S.g.horizon,0)+" yr"; }
+
+  function renderTiming(o,tm,comb,fail,ev){
+    var Ts=tm.Ts, T=tm.T, sRep=[], sRtf=[];
+    for(var d=1;d<=Ts;d++){ sRep.push(tm.inT(tm.rep[d],d)); sRtf.push(tm.inT(tm.rtf[d],d)); }
+    var marks=T>=0?[{m:T,v:tm.inT(tm.rep[T],T),col:"#1c7449",below:true,label:T===0?"Repair trigger: now":"Repair trigger: "+monthText(T)}]:[];
+    document.getElementById("tmChart").innerHTML=lineChart([
+      {name:"Repair then: repair + shutdown + remaining risk, next "+hy(),col:"#0a5872",w:3,y:sRep,start:tm.rep[0]},
+      {name:"Keep running: expected failure cost, next "+hy(),col:"#ad3d27",w:3,y:sRtf,start:tm.rtf[0]}],
+      {M:Ts,fmt:$f,aria:"Cost of repairing versus keeping the line running, by decision month",h:300,zoom:true,xl:"Month the decision is made",marks:marks});
+    document.getElementById("tmLeg").innerHTML=legendHTML([{name:"Repair then: repair + shutdown + remaining risk over the next "+hy(),col:"#0a5872"},{name:"Keep running: expected failure cost over the next "+hy(),col:"#ad3d27"}]);
+    document.getElementById("tmSub").innerHTML="For each month you could decide in, both options are costed over the same look-ahead of "+hy()+", in that month's dollars, assuming the line has not failed by then. The repair cost is certain; the failure cost is a probability-weighted average that rises as PoF grows. Where the red line crosses above the blue line, repairing becomes the cheaper choice: that is the repair trigger."+tip("trigger");
+    var h='<thead><tr><th>Decision month</th><th>PoF then'+tip("pof")+'</th><th>Pad rates<br>then, bopd</th><th>Chance it failed<br>before then'+tip("chancefail")+'</th><th>Repair then'+tip("cost")+'</th><th>Keep running:<br>expected failure cost'+tip("exploss")+'</th><th>Risk-reward<br>ratio'+tip("ratio")+'</th><th>Better choice</th></tr></thead><tbody>';
+    var rows=[]; for(d=0;d<=Ts;d+=12) rows.push(d); if(T>0 && T%12!==0) rows.push(T); rows.sort(function(a,b){return a-b;});
+    rows.forEach(function(d){
+      var rep=d>=T&&T>=0;
+      h+='<tr'+(d===T?' class="tot"':'')+'><td class="l">'+(d===0?"Now":esc(monthText(d)))+'</td><td>'+nf(tm.pofAt(d),1)+'%/yr</td><td>'+nf(tm.qd(d),0)+'</td><td>'+pc(1-tm.Sv[d],1)+'</td><td>'+$f(tm.inT(tm.rep[d],d))+'</td><td>'+$f(tm.inT(tm.rtf[d],d))+'</td><td>'+nf(tm.ratio[d],2)+'</td><td class="l"><span class="chip '+(tm.ratio[d]>=1?"pos":"neg")+'">'+(tm.ratio[d]>=1?"Repair":"Keep running")+'</span></td></tr>';
+    });
+    document.getElementById("tmTbl").innerHTML=h+'</tbody>';
+  }
+
+  function renderQA(o,tm,comb,fail,pads,ev,pTxt){
+    var g=S.g, T=tm.T, qa=[], q0=tm.qd(0), A=tm.rep[0], C=tm.rtf[0], gr=S.t.tPofG?g.pofG:0;
+    var pw=pc(tm.pfWin[0],0), Tx=T>0?monthText(T):"", cq=comb.cost>0?tm.ev[0]/comb.cost:0;
+    var cheapFail = cq<1 ? "One failure ("+$f(tm.ev[0])+") costs less than the planned repair ("+$f(tm.plan[0])+"), because the "+nf(g.rDays)+"-day planned shutdown loses more production than the "+nf(g.fDays)+"-day outage after a failure. On risk alone the repair cannot pay until the planned shutdown is shorter or the failure consequence is larger." : "";
+    var a1;
+    if(comb.npv<0) a1="Neither, on economics: the production the repair keeps does not repay it within "+hy()+".";
+    else if(T===0) a1="Now. Over the next "+hy()+", repairing costs "+$f(A)+" (repair, shutdown and the small risk that remains), while keeping the line running without it carries an expected failure cost of "+$f(C)+".";
+    else if(T>0) a1="Not yet; plan it for "+Tx+". Today, repairing costs "+$f(A)+" over the next "+hy()+", more than the "+$f(C)+" expected failure cost of keeping the line running. By "+Tx+" PoF is expected to reach "+nf(tm.pofAt(T),1)+"%/yr and the two cross.";
+    else a1="Not on failure risk within the next "+nf(tm.Ts/12,0)+" years at your inputs: keeping the line running stays cheaper in expected terms. "+(cheapFail||"Repairing today would only pay on risk if PoF were already "+pTxt+".");
+    qa.push(["Repair now or later?",a1]);
+    var pp=pads.map(function(s){ return s.name+" "+payText(s.pay); }).join(", ");
+    qa.push(["What time frame justifies the repair?","On the production it keeps: "+payText(comb.pay)+" for all pads together ("+pp+" alone), so keeping the line in service is clearly worth it. On failure risk: "+(T===0?"now, because the expected failure cost already exceeds the repair.":T>0?"from "+Tx+", when the expected failure cost overtakes the repair.":"not within "+nf(tm.Ts/12,0)+" years.")]);
+    var why="The repair cost is certain: "+$f(tm.plan[0]-tm.shut[0])+" to do the work plus "+$f(tm.shut[0])+" of production lost while "+nf(q0,0)+" bopd is shut in for "+nf(g.rDays)+" days. A failure costs more ("+$f(tm.ev[0])+" today) but is not certain: there is a "+pw+" chance of one in the next "+hy()+", so its expected cost is "+$f(C)+". ";
+    if(T===0) why+="The expected failure cost is already higher than the repair, and it keeps rising"+(gr?" as PoF grows "+nf(gr,0)+"%/yr":"")+".";
+    else if(T>0) why+=(gr?"PoF grows "+nf(gr,0)+"%/yr, so the expected failure cost rises":"As production changes, the balance shifts")+" until it overtakes the repair cost in "+Tx+".";
+    else why+=(cheapFail||"That balance does not change enough within the look-ahead for the repair to win on risk.");
+    qa.push(["Why is this the right time?",why]);
+    var a4;
+    if(T===0){ var k=12; a4="You should not wait. A 12-month delay carries a "+pc(1-tm.Sv[k],0)+" chance the line fails first, an expected cost of "+$f(tm.Wc(k))+", and PoF rises to "+nf(tm.pofAt(k),1)+"%/yr."; }
+    else if(T>0) a4="Until "+Tx+". The price of waiting that long is a "+pc(1-tm.Sv[T],0)+" chance the line fails first (expected cost "+$f(tm.Wc(T))+"). Repair sooner if an inspection or leak history shows PoF at or above "+nf(tm.pofAt(T),1)+"%/yr, if a refrac or other outage offers a shutdown you are taking anyway, or if oil prices fall (a cheaper shutdown).";
+    else a4="Through the next "+nf(tm.Ts/12,0)+" years on expected cost. Chance of a failure in that time: "+pc(1-tm.Sv[tm.Ts],0)+". Re-run when inspection data changes the PoF.";
+    qa.push(["How long can we wait?",a4]);
+    qa.push(["What is the risk-reward at the time of repair?","Today "+nf(tm.ratio[0],2)+": each $1 spent on the repair avoids $"+nf(tm.ratio[0],2)+" of expected failure cost over the next "+hy()+". If the line does fail, that one failure costs "+nf(cq,1)+" times the repair. "+(T===0?"Above 1.0, so the repair pays on risk today.":T>0?"The ratio reaches 1.0 in "+Tx+"; that is the repair trigger.":"It does not reach 1.0 within the look-ahead.")]);
+    var keys=["trigger","payback","exploss","trigger","ratio"];
+    document.getElementById("qa").innerHTML=qa.map(function(x,i){ return '<div><div class="q">'+esc(x[0])+tip(keys[i])+'</div><div class="a">'+esc(x[1])+'</div></div>'; }).join("");
+  }
+
+  /* ---------- render ---------- */
+  var last=null, lastL=null;
+  function render(){
+    var o=model(); last=o;
+    var g=S.g, t=S.t, P=o.P, pl=o.plan, M=o.M, yrs=nf(g.horizon,0)+" yr";
+    document.getElementById("nb").textContent=(o.N<0?"-$":"$")+nf(Math.abs(o.N),2);
+    document.getElementById("schem").innerHTML=schematic(o);
+    var L=levels(o); lastL=L;
+    var pads=L.filter(function(s){return s.kind==="pad";}), comb=L.filter(function(s){return s.id==="all";})[0], fail=L.filter(function(s){return s.id==="fail";})[0];
+
+    var beP=P.length ? bisect(function(v){ return withG("pof",v,function(m){ return m.plan.R; }); },0,99.9) : {state:"high"};
+    var pTxt=beP.state==="low"?"0%/yr":beP.state==="high"?">99%/yr":nf(beP.v,1)+"%/yr";
+
+    // KPIs
+    function kpi(id,v,good,sub,subId){ var el=document.getElementById(id); el.textContent=v; el.className="v "+(good?"pos":"neg"); if(subId) document.getElementById(subId).textContent=sub; }
+    if(comb){
+      kpi("kA",$f(comb.npv),comb.npv>=0,"payback "+payText(comb.pay),"kAs");
+      kpi("kB",beText(comb.beEnd,true),comb.beEnd.st==="any"||(comb.beEnd.st==="ok"&&g.price>=comb.beEnd.p),"end of "+yrs+", today $"+nf(g.price,2),"kBs");
+      kpi("kR",$f(fail.npv),fail.npv>=0,"payback "+payText(fail.pay),"kRs");
+    } else { ["kA","kB","kR"].forEach(function(id){ document.getElementById(id).textContent="-"; }); }
+    var kpT=null;
+
+    // pad chips
+    S.pads.forEach(function(pd,j){
+      var el=document.getElementById("chip-"+j); if(!el) return;
+      var ix=-1; P.forEach(function(r,i){ if(r.j===j) ix=i; });
+      if(ix<0){ el.innerHTML='<span class="chip">excluded</span>'; return; }
+      var s=pads[ix];
+      el.innerHTML='<span class="chip '+(s.npv>=0?"pos":"neg")+'">NPV alone '+$f(s.npv)+'</span><span class="chip">payback '+esc(payText(s.pay))+'</span>';
+    });
+
+    var ev=P.length?eventCost(o):null, tm=P.length?timing(o):null;
+    CTX={o:o,L:L,pads:pads,comb:comb,fail:fail,tm:tm,ev:ev,pTxt:pTxt};
+    if(tm){ kpi("kP",tm.T===0?"Now":tm.T>0?monthText(tm.T).replace(/ \(.*\)/,""):"> "+nf(tm.Ts/12,0)+" yr",tm.T===0,tm.T>=0?"PoF about "+nf(tm.pofAt(tm.T),1)+"%/yr then":"at your PoF inputs","kPs"); }
+    renderSummary(o,L,pads,comb,fail,pTxt,tm);
+    if(comb){ renderQA(o,tm,comb,fail,pads,ev,pTxt); renderTiming(o,tm,comb,fail,ev); } else { document.getElementById("qa").innerHTML=""; document.getElementById("tmChart").innerHTML=""; document.getElementById("tmTbl").innerHTML=""; }
+    if(!comb){ ["beChart","pbChart","failChart"].forEach(function(id){ document.getElementById(id).innerHTML='<p class="sub">No pads included.</p>'; }); document.getElementById("steps").innerHTML=""; save(); return; }
+
+    // break-even price chart
+    var ymax=Math.max(150,Math.ceil(g.price*2.5/25)*25);
+    var beSeries=L.map(function(s){
+      var y=s.be.map(function(b){ return b.st==="ok" && b.p<=ymax ? b.p : null; });
+      var mk=s.pay>0 && s.pay<=M ? {m:s.pay,v:Math.min(ymax,Math.max(0,s.be[s.pay-1].st==="ok"?s.be[s.pay-1].p:g.price))} : null;
+      return {name:s.name,col:s.col,w:s.kind==="pad"?2:3,dash:s.kind==="fail"?"7 4":null,y:y,start:null,mark:mk};
+    });
+    document.getElementById("beChart").innerHTML=lineChart(beSeries,{M:M,lo:0,hi:ymax,fmt:px,aria:"Break-even oil price versus time",h:320,refs:[{y:Math.min(ymax,g.price),label:"Today $"+nf(g.price,2)+"/bbl"}]});
+    document.getElementById("beLeg").innerHTML=legendHTML(L.map(function(s){ return {name:s.name+(s.kind==="fail"?(s.beEnd.dir==="below"?" (repair wins at or below line)":" (repair wins above line)"):""),col:s.col,dash:s.kind==="fail"}; }));
+    document.getElementById("beSub").textContent="For each month on the x axis, the oil price at which the value preserved by that date exactly repays the repair and shutdown. A line below today's price means that case has paid back by then; the dot marks the payback month at today's price. Prices above $"+nf(ymax,0)+" are off the chart."+(fail.beEnd.dir==="below"?" The red dashed line runs the other way: a higher oil price makes the planned shutdown more expensive than the failures it prevents, so repair beats doing nothing only at or below that line.":"");
+
+    // payback chart
+    var pbSeries=L.filter(function(s){return s.kind!=="fail";}).map(function(s){
+      return {name:s.name,col:s.col,w:s.kind==="pad"?2:3,y:s.net,start:-s.cost,mark:s.pay>0?{m:s.pay,v:s.net[s.pay-1]}:null};
+    });
+    document.getElementById("pbChart").innerHTML=lineChart(pbSeries,{M:M,fmt:$f,aria:"Cumulative net value versus time",h:300});
+    document.getElementById("pbLeg").innerHTML=legendHTML(pbSeries);
+
+    // levels 1 and 2 table
+    var h='<thead><tr><th>Scenario</th><th>Base<br>PV'+tip("base")+'</th><th>Refrac<br>PV'+tip("risked")+'</th><th>Development<br>PV'+tip("risked")+'</th><th>Capex +<br>downtime'+tip("capexdown")+'</th><th>Value<br>preserved'+tip("value")+'</th><th>Repair<br>cost</th><th>Shutdown<br>barrels</th><th>Shutdown<br>loss'+tip("shutloss")+'</th><th>Total<br>cost'+tip("cost")+'</th><th>NPV'+tip("npv")+'</th><th>Payback'+tip("payback")+'</th><th>Break-even<br>oil price'+tip("beprice")+'</th></tr></thead><tbody>';
+    function lrow(name,rs,s,cls){
+      return '<tr'+(cls?' class="'+cls+'"':'')+'><td class="l">'+esc(name)+'</td><td>'+$f(sum(rs,function(r){return r.pvBase;}))+'</td><td>'+$f(sum(rs,function(r){return r.pvRef;}))+'</td><td>'+$f(sum(rs,function(r){return r.pvDev;}))+'</td><td>'+$f(-sum(rs,function(r){return r.pvCap+r.pvDown;}))+'</td><td>'+$f(s.value)+'</td><td>'+$f(-s.rc)+'</td><td>'+nf(s.sbbl)+'</td><td>'+$f(-s.shut)+'</td><td>'+$f(-s.cost)+'</td><td class="'+(s.npv>=0?"pos-t":"neg-t")+'">'+$f(s.npv)+'</td><td class="l">'+esc(payText(s.pay))+'</td><td>'+esc(beText(s.beEnd,true))+'</td></tr>';
+    }
+    P.forEach(function(r,ix){ h+=lrow("1. "+r.pd.name+" alone",[r],pads[ix]); });
+    h+=lrow("2. All pads combined",P,comb,"tot");
+    document.getElementById("lvlTbl").innerHTML=h+'</tbody>';
+
+    // level 3
+    var b=o.base, rs=o.res, Lb=pl.bTot, Lr=pl.rTot, avoided=Lb-Lr, up=fail.cost;
+    document.getElementById("l3Sub").textContent="If nothing is done, the line keeps producing but carries a "+pc(b.pfail,0)+" chance of failing within "+yrs+" ("+nf(g.pof,1)+"%/yr"+(t.tPofG?", rising "+nf(g.pofG,0)+"%/yr":"")+"). A failure today would cost "+$f(ev.pv[0])+": "+(g.mode==="reactive"?nf(g.fDays)+" days of lost production on every pad":"all remaining production")+", plus failure repair, cleanup and fines. Fixing now costs "+$f(up)+" and leaves a "+nf(t.tPofR?g.pofR:0,1)+"%/yr residual risk.";
+    var row=function(l,a,r2,cls){ return '<tr'+(cls?' class="'+cls+'"':'')+'><td class="l">'+l+'</td><td>'+a+'</td><td>'+r2+'</td></tr>'; };
+    var fx=function(v){ return v===0?"$0":"-"+$f(v); };
+    var ownB=sum(P,function(r){return r.ownBase;}), ownR=sum(P,function(r){return r.ownRes;});
+    var lt='<thead><tr><th>Over '+esc(yrs)+', present value</th><th>Fix now</th><th>Do nothing</th></tr></thead><tbody>';
+    lt+=row("Production value, all pads",$f(pl.stake),$f(pl.stake));
+    lt+=row("Valve / repair cost",fx(pl.rc),"$0");
+    lt+=row("Production lost in "+nf(g.rDays)+"-day planned shutdown",fx(pl.shut),"$0");
+    lt+=row("Expected unplanned failure cost",fx(Lr),fx(Lb));
+    lt+=row("Failure repair",fx(rs.fix),fx(b.fix),"sub");
+    lt+=row("Production lost in unplanned outage",fx(ownR),fx(ownB),"sub");
+    lt+=row("Cleanup / environmental",fx(rs.clean),fx(b.clean),"sub");
+    lt+=row("Regulatory fines / other",fx(rs.reg),fx(b.reg),"sub");
+    lt+=row("<b>Net value</b>","<b>"+$f(pl.A)+"</b>","<b>"+$f(pl.RTF)+"</b>","tot");
+    lt+=row("<b>Fix now minus do nothing</b>",'<b class="'+(fail.npv>=0?"pos-t":"neg-t")+'">'+$f(fail.npv)+'</b>',"","tot");
+    document.getElementById("ansTbl").innerHTML=lt+'</tbody>';
+    var ir=irrAnnual(up,pl.avM,o.df), irTxt=ir.state==="ok"?pc(ir.v,0)+"/yr":ir.state==="high"?"> 10,000%/yr":ir.state==="low"?"< -99%/yr":"n/a";
+    var mets=[
+      ["Spend now",$f(up),$f(pl.rc)+" repair + "+$f(pl.shut)+" shutdown","cost"],
+      ["Expected loss if nothing is done",$f(Lb),pc(b.pfail,0)+" chance of failure in "+yrs,"exploss"],
+      ["Cost of one failure today",$f(ev.pv[0]),"repair + outage + cleanup + fines","event"],
+      ["Expected loss avoided",$f(avoided),"after "+$f(Lr)+" residual risk","avoided"],
+      ["Risk-reward ratio",up>0?nf(avoided/up,2)+" x":"n/a","expected loss avoided per $1","ratio"],
+      ["Rate of return (IRR)",irTxt,"on expected avoided losses","irr"],
+      ["Payback",payText(fail.pay),"discounted, expected value","payback"],
+      ["Break-even today",beText(fail.beEnd,true)+" | "+pTxt,"oil price | PoF needed today","bepof"]];
+    document.getElementById("ansMets").innerHTML=mets.map(function(x){ return '<div class="met"><div class="k">'+esc(x[0])+tip(x[3])+'</div><div class="v">'+esc(x[1])+'</div><div class="s">'+esc(x[2])+'</div></div>'; }).join("");
+
+    var cb=[], cr=[], run=0, rr=0; for(var m=0;m<M;m++){ run+=pl.bM[m]; rr+=pl.rM[m]; cb.push(run); cr.push(up+rr); }
+    var cross=-1; for(m=0;m<M;m++){ if(cb[m]>=cr[m]){ cross=m+1; break; } }
+    var fSeries=[
+      {name:"Expected loss if nothing is done",col:"#ad3d27",w:3,y:cb,start:0,mark:cross>0?{m:cross,v:cb[cross-1]}:null},
+      {name:"Repair + shutdown + residual expected loss",col:"#0a5872",w:3,y:cr,start:up},
+      {name:"Cost of one failure in that month (PV)",col:"#9a5b05",w:2,dash:"6 4",y:ev.pv,start:null}];
+    document.getElementById("failChart").innerHTML=lineChart(fSeries,{M:M,fmt:$f,aria:"Expected failure loss versus repair cost over time",h:280});
+    document.getElementById("failLeg").innerHTML=legendHTML(fSeries);
+    var Y=Math.ceil(M/12), fy='<thead><tr><th>Year</th><th>Chance of first<br>failure in year'+tip("pof")+'</th><th>Chance of failure<br>by year end'+tip("chancefail")+'</th><th>Cost if it fails<br>mid-year (PV)'+tip("event")+'</th><th>Expected loss,<br>do nothing (cum.)'+tip("exploss")+'</th><th>Repair + residual<br>(cum.)</th><th>Net benefit<br>of repair (cum.)'+tip("npv")+'</th><th>Break-even<br>oil price'+tip("beprice")+'</th></tr></thead><tbody>';
+    for(var y=0;y<Y;y++){
+      var e=Math.min(M,y*12+12)-1, mid=Math.min(M-1,y*12+6);
+      fy+='<tr><td class="l">Y'+(y+1)+'</td><td>'+pc(b.yr.pf[y],1)+'</td><td>'+pc(1-b.yr.surv[y],1)+'</td><td>'+$f(ev.pv[mid])+'</td><td>'+$f(cb[e])+'</td><td>'+$f(cr[e])+'</td><td class="'+(fail.net[e]>=0?"pos-t":"neg-t")+'">'+$f(fail.net[e])+'</td><td>'+esc(beText(fail.be[e],true))+'</td></tr>';
+    }
+    document.getElementById("failYr").innerHTML=fy+'</tbody>';
+
+    document.getElementById("steps").innerHTML=steps(o,L,pads,comb,fail,pTxt,ev,tm);
+    renderGlossary();
+    document.getElementById("exTag").hidden=JSON.stringify({g:S.g,t:S.t,pads:S.pads})!==JSON.stringify({g:DEF.g,t:DEF.t,pads:DEF.pads});
+    save();
+  }
+
+  function renderSummary(o,L,pads,comb,fail,pTxt,tm){
+    var g=S.g, yrs=nf(g.horizon,0)+" yr", el=document.getElementById("ans");
+    document.getElementById("ansEye").textContent="Decision summary | evaluation period "+yrs+" | oil $"+nf(g.price,2)+"/bbl";
+    if(!comb){ el.className="ans"; document.getElementById("ansHead").textContent="Include at least one pad"; document.getElementById("ansLead").textContent=""; document.getElementById("sumTbl").innerHTML=""; document.getElementById("ansNote").textContent=""; return; }
+    var head, cls;
+    var T=tm.T;
+    if(comb.npv<0){ cls="neg"; head="The repair does not pay back within "+yrs+" on the production it preserves."; }
+    else if(T===0){ cls="pos"; head="Repair now. The production it keeps repays it in "+payText(comb.pay)+", and the expected cost of a failure already exceeds the cost of the repair."; }
+    else if(T>0){ cls="warn"; head="Keep producing and plan the repair for "+monthText(T)+". The production it keeps justifies the repair, but until PoF reaches about "+nf(tm.pofAt(T),1)+"%/yr a failure is expected to cost less than the certain cost of the repair and shutdown."; }
+    else { cls="warn"; head="Keep producing. The production justifies keeping the line, but on failure risk the repair does not pay within the next "+nf(tm.Ts/12,0)+" years at your PoF inputs."; }
+    el.className="ans "+cls;
+    document.getElementById("ansHead").textContent=head;
+    var alone=pads.filter(function(s){return s.npv>=0;}).map(function(s){return s.name;}), short=pads.filter(function(s){return s.npv<0;}).map(function(s){return s.name;});
+    document.getElementById("ansLead").textContent="The repair costs "+$f(comb.cost)+": "+$f(comb.rc)+" direct plus "+$f(comb.shut)+" of production lost during the "+nf(g.rDays)+"-day shutdown of all pads. "+
+      (alone.length?"Pads that repay it on their own: "+alone.join(", ")+". ":"No single pad repays it on its own. ")+(short.length?"Pads that do not: "+short.join(", ")+". ":"")+
+      "Doing nothing avoids that cost now but leaves a "+pc(tm.pfWin[0],0)+" chance of a failure in the next "+yrs+", at about "+$f(tm.ev[0])+" each.";
+    var h='<thead><tr><th>Level</th><th>Scenario</th><th>Repair<br>cost</th><th>Shutdown<br>loss'+tip("shutloss")+'</th><th>Value preserved /<br>loss avoided'+tip("value")+'</th><th>NPV'+tip("npv")+'</th><th>Payback'+tip("payback")+'</th><th>Break-even<br>oil price'+tip("beprice")+'</th><th>Result</th></tr></thead><tbody>';
+    function r(level,s,valLabel,cls){
+      return '<tr'+(cls?' class="'+cls+'"':'')+'><td class="l">'+level+'</td><td class="l">'+esc(s.name)+(valLabel?' <span style="color:var(--muted)">'+valLabel+'</span>':'')+'</td><td>'+$f(s.rc)+'</td><td>'+$f(s.shut)+'</td><td>'+$f(s.value)+'</td><td class="'+(s.npv>=0?"pos-t":"neg-t")+'">'+$f(s.npv)+'</td><td class="l">'+esc(payText(s.pay))+'</td><td>'+esc(beText(s.beEnd,true))+'</td><td class="l"><span class="chip '+(s.npv>=0?"pos":"neg")+'">'+(s.npv>=0?"Pays back":"No payback")+'</span></td></tr>';
+    }
+    pads.forEach(function(s){ h+=r("1. Individual",s,"alone"); });
+    h+=r("2. Combined",comb,"","tot");
+    h+=r("3. Do nothing",fail,"(expected loss avoided)","tot");
+    document.getElementById("sumTbl").innerHTML=h+'</tbody>';
+    document.getElementById("ansNote").textContent="Value preserved is the discounted net cash from base, refrac and development production that continues because the line is repaired. Break-even oil price is the price at which that value exactly repays the repair and shutdown by the end of the period. For level 3 the comparison is expected failure loss avoided versus the same repair and shutdown cost"+(fail.beEnd.dir==="below"?"; at higher oil prices the planned shutdown costs more, so repair wins at or below the price shown.":".");
+  }
+
+  /* ---------- calculation steps ---------- */
+  function stepBox(no,title,body){ return '<details'+(stepOpen[no]?' open':'')+' data-step="'+no+'"><summary><span class="no">'+no+'</span><span>'+esc(title)+'</span></summary><div class="sb">'+body+'</div></details>'; }
+  function tbl(head,rows,totRow){
+    var h='<div class="tbl-w"><table><thead><tr>'+head.map(function(x){return '<th>'+x+'</th>';}).join("")+'</tr></thead><tbody>';
+    rows.forEach(function(r){ h+='<tr>'+r.map(function(c,i){ return '<td'+(i===0?' class="l"':'')+'>'+c+'</td>'; }).join("")+'</tr>'; });
+    if(totRow) h+='<tr class="tot">'+totRow.map(function(c,i){ return '<td'+(i===0?' class="l"':'')+'>'+c+'</td>'; }).join("")+'</tr>';
+    return h+'</tbody></table></div>';
+  }
+  function seriesYears(s,M){
+    var Y=Math.ceil(M/12), rows=[];
+    for(var y=0;y<Y;y++){ var e=Math.min(M,y*12+12)-1; rows.push(['Y'+(y+1),fm(s.net[e]+s.cost),fm(s.cost),'<span class="'+(s.net[e]>=0?"pos-t":"neg-t")+'">'+fm(s.net[e])+'</span>',nf(s.k[e],0),fm(s.c[e]),esc(beText(s.be[e]))]); }
+    return rows;
+  }
+  function steps(o,L,pads,comb,fail,pTxt,ev,tm){
+    var g=S.g, t=S.t, P=o.P, N=o.N, M=o.M, Y=Math.ceil(M/12), pl=o.plan, out='', y, m, f=g.nri/100*(1-g.tax/100);
+
+    out+=stepBox("1","Netback per barrel",
+      '<p>Revenue kept on each gross barrel after royalty, production taxes and operating cost.</p>'+
+      '<div class="eq">Netback = price x NRI x (1 - tax) - LOE\n        = '+nf(g.price,2)+' x '+nf(g.nri/100,4)+' x (1 - '+nf(g.tax/100,4)+') - '+nf(g.loe,2)+'\n        = $'+nf(N,2)+' per bbl</div>');
+
+    var dfr=[]; for(y=0;y<Y;y++){ var mm=Math.min(M-1,y*12); dfr.push(['Y'+(y+1),'month '+mm,nf(o.df[mm],4),nf(o.df[Math.min(M-1,y*12+11)],4)]); }
+    out+=stepBox("2","Time steps and discounting",
+      '<p>The model runs month by month for '+M+' months. Each month is 365 / 12 = 30.417 days. Monthly cash is discounted at mid-month. Repair cost and shutdown loss are paid at month 0 and are not discounted.</p>'+
+      '<div class="eq">'+(t.tDisc?'DF(m) = (1 + i)^-((m + 0.5) / 12),  i = '+nf(g.disc,2)+'%/yr\nDF(0) = '+nf(o.df[0],4):'Discounting is off: DF = 1.')+'</div>'+
+      tbl(["Year","First month","DF first month","DF last month"],dfr));
+
+    var b3='<p>Month m uses the rate entered for the year it falls in; zero after the producing life. Refrac and development years count from their own start month. This is the production the repair preserves.</p>'+
+      '<div class="eq">rate(m)      = base(m) + refrac(m) x P(success) + dev(m) x P(sanction)\nrevenue(m)   = rate(m) x 30.417 x $'+nf(N,2)+'\nnet cash(m)  = revenue(m) - capex(m) - refrac downtime(m)\nvalue(T)     = sum over m < T of net cash(m) x DF(m)</div>';
+    P.forEach(function(r){
+      var rows=[], tt=fillA(6,0);
+      for(y=0;y<Y;y++){
+        var a=y*12, z=Math.min(M,a+12), n=z-a, sb=0,sr=0,srr=0,sd=0,sdr=0,bb=0,vv=0,cc=0,nn=0,pv=0;
+        for(m=a;m<z;m++){ sb+=r.base[m]; sr+=r.ref[m]; srr+=r.refRaw[m]; sd+=r.dev[m]; sdr+=r.devRaw[m]; bb+=r.q[m]*DPM; vv+=r.val[m]; cc+=r.cap[m]+r.down[m]; nn+=r.cf[m]; pv+=r.cf[m]*o.df[m]; }
+        tt[0]+=bb; tt[1]+=vv; tt[3]+=cc; tt[4]+=nn; tt[5]+=pv;
+        rows.push(['Y'+(y+1),nf(sb/n,1),nf(sr/n,1)+(r.refOn?' <span style="color:var(--muted)">('+nf(srr/n,0)+')</span>':''),nf(sd/n,1)+(r.devOn?' <span style="color:var(--muted)">('+nf(sdr/n,0)+')</span>':''),nf((sb+sr+sd)/n,1),nf(bb),fm(vv),fm(cc),fm(nn),fm(pv)]);
+      }
+      var notes=[];
+      if(r.refOn) notes.push('Refrac completes month '+r.sm+'; cost '+fm(t.tCapex?r.pd.ref.cost:0)+'; chance '+nf(r.pd.ref.chance)+'%'+(t.tRefDown?'; downtime '+nf(r.pd.ref.down)+' d x '+nf(r.base[Math.min(M-1,r.sm)]||0,1)+' bopd x $'+nf(N,2):'')+'.');
+      if(r.devOn) notes.push('Development first oil month '+r.ds+'; capex '+fm(r.pd.dev.cost)+' x '+nf(r.pd.dev.chance)+'%.');
+      b3+='<h4>'+esc(r.pd.name)+'</h4>'+(notes.length?'<p>'+notes.map(esc).join(' ')+'</p>':'')+
+        tbl(["Year","Base bopd","Refrac bopd<br>risked (raw)"+tip("risked"),"Dev bopd<br>risked (raw)"+tip("risked"),"Total bopd","Barrels","Revenue","Capex +<br>downtime"+tip("capexdown"),"Net cash","PV"+tip("pv")],rows,
+          ["Total","","","","",nf(tt[0]),fm(tt[1]),fm(tt[3]),fm(tt[4]),fm(tt[5])]);
+    });
+    out+=stepBox("3","Production value preserved, by pad",b3);
+
+    var q0=sum(P,function(r){return r.q[0];});
+    out+=stepBox("4","Repair cost and shutdown loss",
+      '<p>The repair is paid at month 0. While the line is down, production is lost, not deferred. Evaluated alone, a pad carries the full repair cost and only its own shutdown loss. Combined, the repair is counted once and every pad\'s shutdown loss is added.</p>'+
+      '<div class="eq">shutdown loss (pad)  = shutdown days x pad rate at month 0 x netback\ncost alone (pad)     = repair + shutdown loss (pad)\ncost combined        = repair + '+(t.tRShut?nf(g.rDays):'0')+' x '+nf(q0,1)+' x '+nf(N,2)+' = '+fm(comb.rc)+' + '+fm(comb.shut)+' = '+fm(comb.cost)+'</div>'+
+      tbl(["Pad","Rate at month 0, bopd","Shutdown barrels","Shutdown loss","Repair cost","Cost if evaluated alone"],P.map(function(r,ix){ var s=pads[ix]; return [esc(r.pd.name),nf(r.q[0],1),nf(s.sbbl),fm(s.shut),fm(s.rc),fm(s.cost)]; }),
+        ["Combined",nf(q0,1),nf(comb.sbbl),fm(comb.shut),fm(comb.rc),fm(comb.cost)]));
+
+    var head5=["End of year","Value preserved<br>to date"+tip("value"),"Cost"+tip("cost"),"NPV to date"+tip("npv"),"k: NPV change<br>per $1 netback"+tip("kc"),"c: NPV at<br>$0 netback"+tip("kc"),"Break-even<br>oil price"+tip("beprice")];
+    var b5='<p>For each pad alone: NPV(T) = value preserved to month T - (repair + own shutdown loss). Payback is the first month from which NPV stays positive at today\'s price (a later refrac or development spend can push it back below zero). Break-even oil price at T is the price that makes NPV(T) = 0 (method in step 10).</p>';
+    pads.forEach(function(s){ b5+='<h4>'+esc(s.name)+'</h4><p>Payback '+esc(payText(s.pay))+'. NPV at '+nf(g.horizon,0)+' yr '+fm(s.npv)+'.</p>'+tbl(head5,seriesYears(s,M)); });
+    out+=stepBox("5","Level 1: each pad alone",b5);
+
+    out+=stepBox("6","Level 2: all pads combined",
+      '<p>NPV(T) = value preserved by all pads to month T - (repair + shutdown loss of all pads). Payback '+esc(payText(comb.pay))+'. NPV at '+nf(g.horizon,0)+' yr '+fm(comb.npv)+'.</p>'+tbl(head5,seriesYears(comb,M)));
+
+    var fr=[]; for(y=0;y<Y;y++) fr.push(['Y'+(y+1),pc(o.base.yr.py[y]||0,2),pc(o.base.yr.h[y]||0,3),pc(o.base.yr.pf[y],2),pc(o.base.yr.surv[y],2),pc(o.res.yr.pf[y],2)]);
+    out+=stepBox("7","Probability of failure by year",
+      '<p>Annual PoF becomes a monthly hazard that grows each year if PoF growth is on. Only the first failure is counted. The repaired line uses the residual PoF without growth.</p>'+
+      '<div class="eq">PoF(m)       = '+nf(g.pof,2)+'% x (1 + '+(t.tPofG?nf(g.pofG,2):'0')+'%)^(m / 12)\nh(m)         = 1 - (1 - PoF(m))^(1/12)\nP(fail in m) = survival(m-1) x h(m)\nmonth 0: h = 1 - (1 - '+nf(g.pof/100,4)+')^(1/12) = '+nf(o.base.yr.h[0]||0,5)+'</div>'+
+      tbl(["Year","Annual PoF,<br>start of year","Monthly<br>hazard","P(first failure<br>in year)","Survival,<br>end of year","After repair:<br>P(fail in year)"],fr,["Total","","",pc(o.base.pfail,2),"",pc(o.res.pfail,2)]));
+
+    var ex0=P.map(function(r){
+      if(!t.tFProd) return esc(r.pd.name)+': production loss switched off';
+      if(g.mode==="abandon") return esc(r.pd.name)+': loses all remaining net cash; at month 0 = '+fm(r.tail[0]);
+      return esc(r.pd.name)+': '+nf(g.fDays)+' days x '+nf(r.q[0],1)+' bopd x $'+nf(N,2)+' = '+fm(g.fDays*r.q[0]*N);
+    });
+    var head8=["Year","P(fail)","Expected<br>fixed cost"].concat(P.map(function(r){ return 'Expected outage<br>'+esc(r.pd.name); })).concat(["Expected loss,<br>do nothing","Expected loss,<br>after repair"]);
+    var rows8=[], tot=fillA(P.length+3,0);
+    for(y=0;y<Y;y++){
+      var fxv=o.base.yr.fixed[y], rw=['Y'+(y+1),pc(o.base.yr.pf[y],2),fm(fxv)], eb=fxv, er=o.res.yr.fixed[y]; tot[0]+=fxv;
+      P.forEach(function(r,ix){ rw.push(fm(o.base.yr.own[ix][y])); tot[1+ix]+=o.base.yr.own[ix][y]; eb+=o.base.yr.own[ix][y]; er+=o.res.yr.own[ix][y]; });
+      rw.push(fm(eb),fm(er)); tot[1+P.length]+=eb; tot[2+P.length]+=er; rows8.push(rw);
+    }
+    out+=stepBox("8","Failure cost and expected loss",
+      '<p>A failure shuts in every pad. '+(g.mode==="reactive"?'The line is then repaired and every pad loses its outage days.':'The pads are then abandoned and lose all remaining net cash.')+' Expected loss = sum over months of P(fail in m) x cost of a failure in m x DF(m).</p>'+
+      '<div class="eq">fixed cost per failure = '+fm(ev.fixed)+' (failure repair + cleanup + regulatory)\noutage at month 0, by pad:\n  '+ex0.join("\n  ")+'\ncost of one failure at month 0 = '+fm(ev.pv[0])+'</div>'+
+      tbl(head8,rows8,["Total",pc(o.base.pfail,2),fm(tot[0])].concat(P.map(function(r,ix){return fm(tot[1+ix]);})).concat([fm(tot[1+P.length]),fm(tot[2+P.length])])));
+
+    out+=stepBox("9","Level 3: repair versus do nothing",
+      '<p>Doing nothing avoids the repair and shutdown but leaves the full failure risk. Repairing pays the repair and shutdown now and leaves only residual risk. Production value is the same in both cases, so it cancels.</p>'+
+      '<div class="eq">NPV(T) = expected loss avoided to month T - (repair + shutdown of all pads)\n       = ['+fm(pl.bTot)+' - '+fm(pl.rTot)+'] - '+fm(fail.cost)+' = '+fm(fail.npv)+'  at '+nf(g.horizon,0)+' yr\nbreak-even annual PoF (bisection, whole model rerun) = '+esc(pTxt)+'</div>'+
+      '<p>Payback '+esc(payText(fail.pay))+'.</p>'+tbl(["End of year","Expected loss<br>avoided to date","Cost","NPV to date","k: NPV change<br>per $1 netback","c: NPV at<br>$0 netback","Break-even<br>oil price"],seriesYears(fail,M)));
+
+    var e=M-1;
+    out+=stepBox("10","Break-even oil price method",
+      '<p>Every cost and value in this model is either fixed in dollars or proportional to netback, so NPV at any month is a straight line in netback: NPV(T) = c(T) + k(T) x netback. The model is run at today\'s price and at today\'s price + $10; the two results give k and c exactly. The break-even netback is -c / k, converted back to oil price.</p>'+
+      '<div class="eq">k(T)  = [NPV at price + 10 - NPV at price] / (10 x NRI x (1 - tax))\nc(T)  = NPV(T) - k(T) x netback\nnetback* = -c / k\nprice*   = (netback* + LOE) / (NRI x (1 - tax))\n\nCombined at '+nf(g.horizon,0)+' yr:\n  k = '+nf(comb.k[e],1)+'   c = '+fm(comb.c[e])+'\n  netback* = '+(Math.abs(comb.k[e])>1e-9?nf(-comb.c[e]/comb.k[e],2):'n/a')+'   price* = '+esc(beText(comb.beEnd))+'</div>'+
+      '<p>When k is positive, a higher price helps and the case pays above price*. When k is negative, which happens in level 3 when the planned shutdown loses more barrels than the expected failures, a higher price hurts and the repair wins at or below price*.</p>');
+
+    var trows=[]; for(var dd=0;dd<=tm.Ts;dd+=12){ trows.push([dd===0?"Now":"month "+dd,nf(tm.pofAt(dd),1)+"%",pc(tm.Sv[dd],1),fm(tm.inT(tm.plan[dd],dd)),fm(tm.inT(tm.R[dd],dd)),fm(tm.inT(tm.rep[dd],dd)),fm(tm.inT(tm.rtf[dd],dd)),nf(tm.ratio[dd],2)]); }
+    out+=stepBox("11","Repair timing: when to act",
+      '<p>At each month t you could decide in, assuming the line has not failed yet, both choices are costed over the same look-ahead of one evaluation period ('+nf(g.horizon,0)+' yr), in month-t dollars. Production value is the same either way, because a failure is repaired and production resumes, so only costs are compared. The repair trigger is the first t where repairing costs no more than keeping the line running.</p>'+
+      '<div class="eq">PoF(t)              = '+nf(g.pof,2)+'% x (1 + '+(t.tPofG?nf(g.pofG,2):'0')+'%)^(t / 12)\nrepair then(t)      = repair + shutdown days x pad rates at t x netback + residual risk over [t, t + H)\nkeep running(t)     = sum over m in [t, t + H) of P(first failure in m | no failure before t) x cost of a failure in m\nrisk-reward(t)      = [keep running(t) - residual risk(t)] / [repair + shutdown at t]\ntrigger             = first t with repair then(t) <= keep running(t), i.e. risk-reward(t) >= 1\n\ntoday:   repair '+fm(tm.rep[0])+'   keep running '+fm(tm.rtf[0])+'   ratio '+nf(tm.ratio[0],2)+'\ntrigger: '+(tm.T===0?'now':tm.T>0?esc(monthText(tm.T))+', PoF about '+nf(tm.pofAt(tm.T),1)+'%/yr':'not within '+nf(tm.Ts/12,0)+' yr')+'</div>'+
+      tbl(["Decision month","PoF then"+tip("pof"),"No failure yet"+tip("chancefail"),"Repair + shutdown"+tip("cost"),"Residual risk"+tip("pofr"),"Repair then"+tip("timing"),"Keep running"+tip("exploss"),"Risk-reward"+tip("ratio")],trows));
+    return out;
+  }
+
+  /* ---------- summary / scenario ---------- */
+  function summary(){
+    var o=last, L=lastL; if(!o||!L||!L.length) return "";
+    var g=S.g, Ls=["PIPELINE REPAIR ECONOMICS","Evaluation period "+nf(g.horizon,0)+" yr | oil $"+nf(g.price,2)+"/bbl | netback $"+nf(o.N,2)+"/bbl",
+      document.getElementById("ansHead").textContent,"","Scenario | cost | value preserved / loss avoided | NPV | payback | break-even oil price"];
+    L.forEach(function(s){ Ls.push(s.name+" | "+$f(s.cost)+" | "+$f(s.value)+" | "+$f(s.npv)+" | "+payText(s.pay)+" | "+beText(s.beEnd)); });
+    Ls.push("Break-even PoF: "+document.getElementById("kP").textContent);
+    return Ls.join("\n");
+  }
+  function copyText(s,msg){
+    function fb(){ var ta=document.createElement("textarea"); ta.value=s; ta.style.position="fixed"; ta.style.opacity="0"; document.body.appendChild(ta); ta.select(); try{ document.execCommand("copy"); toast(msg); }catch(e){ toast("Select and copy the text manually"); } ta.remove(); }
+    try{ navigator.clipboard.writeText(s).then(function(){ toast(msg); },fb); }catch(e){ fb(); }
+  }
+  function toast(msg){ var d=document.createElement("div"); d.className="toast"; d.textContent=msg; document.body.appendChild(d); setTimeout(function(){ d.remove(); },1800); }
+
+  /* ---------- wiring ---------- */
+  function rememberOpen(){ document.querySelectorAll("details.pad").forEach(function(d){ openState[d.getAttribute("data-j")]=d.open; }); }
+  function rebuild(){ rememberOpen(); buildGlobals(); buildPads(); syncState(); render(); }
+  function readInput(el){
+    var path=el.getAttribute("data-path"); if(!path) return null;
+    if(el.tagName==="SELECT") setP(path,el.value);
+    else if(el.type==="text") setP(path,el.value.slice(0,40));
+    else { var v=parseFloat(el.value); if(!isFinite(v)||v<0) v=0;
+      if(/\.(nri|tax|chance)$/.test(path)) v=Math.min(v,100);
+      if(/\.(pof|pofR)$/.test(path)) v=Math.min(v,99.9);
+      if(/\.horizon$/.test(path)) v=Math.max(1,Math.min(MAXY,Math.round(v)));
+      if(/\.life$/.test(path)) v=Math.min(v,MAXY);
+      setP(path,v); }
+    return path;
+  }
+  load(); buildGlobals(); buildPads(); syncState(); render();
+
+  document.addEventListener("input",function(e){
+    var el=e.target; if(!el.getAttribute || !el.getAttribute("data-path") || el.tagName==="SELECT") return;
+    var path=readInput(el); if(path==="g.horizon") return; syncState(); render();
+  });
+  document.addEventListener("change",function(e){
+    var el=e.target; if(!el.getAttribute || !el.getAttribute("data-path")) return;
+    var path=readInput(el);
+    if(path==="g.horizon"){ el.value=S.g.horizon; rememberOpen(); buildPads(); }
+    syncState(); render();
+  });
+  document.addEventListener("mouseover",function(e){ var b=e.target.closest&&e.target.closest(".tip"); if(b && !tipPinned) showTip(b); });
+  document.addEventListener("mouseout",function(e){ var b=e.target.closest&&e.target.closest(".tip"); if(b && !tipPinned) hideTip(); });
+  document.addEventListener("focusin",function(e){ var b=e.target.closest&&e.target.closest(".tip"); if(b) showTip(b); });
+  document.addEventListener("focusout",function(e){ var b=e.target.closest&&e.target.closest(".tip"); if(b && !tipPinned) hideTip(); });
+  document.addEventListener("keydown",function(e){ if(e.key==="Escape") hideTip(); });
+  window.addEventListener("scroll",function(){ if(tipBtn) hideTip(); },{passive:true});
+  document.addEventListener("click",function(e){
+    var tb=e.target.closest(".tip");
+    if(tb){ e.preventDefault(); if(tipPinned && tipBtn===tb){ hideTip(); } else { showTip(tb); tipPinned=true; } return; }
+    if(tipPinned && !e.target.closest("#tipPop")) hideTip();
+    var b=e.target.closest(".sw");
+    if(b){ var p=b.getAttribute("data-path"); setP(p,!getP(p)); syncState(); render(); return; }
+    var tb=e.target.closest(".tab[data-view]"); if(tb){ view=tb.getAttribute("data-view"); render(); return; }
+    var a=e.target.closest("[data-act]");
+    if(a){ var j=+a.getAttribute("data-j"); rememberOpen();
+      if(a.getAttribute("data-act")==="del"){ S.pads.splice(j,1); var os={}; Object.keys(openState).forEach(function(k){ k=+k; if(k<j) os[k]=openState[k]; else if(k>j) os[k-1]=openState[k]; }); openState=os; }
+      else if(S.pads.length<MAXPADS){ var c=clone(S.pads[j]); c.name=(c.name+" copy").slice(0,40); S.pads.splice(j+1,0,c); }
+      buildPads(); syncState(); render(); }
+  });
+  document.getElementById("btnAdd").addEventListener("click",function(){
+    if(S.pads.length>=MAXPADS) return; rememberOpen(); S.pads.push(newPad(S.pads.length+1)); buildPads(); syncState(); render();
+    var d=document.querySelector('details.pad[data-j="'+(S.pads.length-1)+'"]'); if(d && d.scrollIntoView) d.scrollIntoView({block:"nearest"});
+  });
+  document.getElementById("steps").addEventListener("toggle",function(e){ var d=e.target; if(d.getAttribute) stepOpen[d.getAttribute("data-step")]=d.open; },true);
+  document.getElementById("btnReset").addEventListener("click",function(){ S=clone(DEF); openState={}; rebuild(); toast("Example inputs restored"); });
+  document.getElementById("btnCopy").addEventListener("click",function(){ copyText(summary(),"Summary copied"); });
+  document.getElementById("btnScenCopy").addEventListener("click",function(){ var s=JSON.stringify({g:S.g,t:S.t,pads:S.pads}); document.getElementById("scenTxt").value=s; copyText(s,"Scenario copied"); });
+  document.getElementById("btnScenLoad").addEventListener("click",function(){
+    var msg=document.getElementById("scenMsg");
+    try{ var s=JSON.parse(document.getElementById("scenTxt").value); if(!s||typeof s!=="object") throw 0; S=normalize(s); openState={}; rebuild(); msg.textContent="Scenario loaded."; }
+    catch(e){ msg.textContent="That text is not a scenario. Copy one with the button above and paste it in full."; }
+  });
+})();
+</script>

@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ICCP Current Throw &amp; Protected-Length Estimator</title>
+<style>
+  :root{
+    --bg:#f4f6f8; --panel:#ffffff; --ink:#1c2733; --sub:#5b6b7a; --line:#d7dee5;
+    --ring:#3a6ea5; --potential:#b5651d; --criteria:#b91c1c; --ok:#2f7d4f; --warn:#b5651d; --bad:#b91c1c;
+    --calib:#0e7a6a;
+    --mono:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace;
+    --sans:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; background:var(--bg); color:var(--ink); font-family:var(--sans);}
+  .topbar{background:var(--panel); border-bottom:1px solid var(--line); padding:14px 20px; display:flex; align-items:baseline; gap:14px;}
+  .topbar h1{font-size:16px; margin:0;}
+  .topbar .tag{font-family:var(--mono); font-size:11px; color:#fff; background:var(--ring); padding:2px 8px; border-radius:3px; letter-spacing:.5px;}
+  .topbar .note{font-size:12px; color:var(--sub); margin-left:auto;}
+  .layout{display:flex; align-items:stretch; min-height:calc(100vh - 49px);}
+
+  .panel{width:300px; flex:none; background:var(--panel); border-right:1px solid var(--line); padding:16px; overflow-y:auto;}
+  .panel h2{font-size:11px; text-transform:uppercase; letter-spacing:.6px; color:var(--sub); margin:18px 0 8px; border-bottom:1px solid var(--line); padding-bottom:5px;}
+  .panel h2:first-child{margin-top:0;}
+  .field{margin-bottom:12px;}
+  .field label{display:block; font-size:12px; color:var(--ink); margin-bottom:4px;}
+  .field .row{display:flex; align-items:center; gap:8px;}
+  .field input[type=range]{
+    -webkit-appearance:none; appearance:none; flex:1; height:4px; border-radius:2px;
+    background:var(--line); outline:none; margin:0; cursor:pointer;
+  }
+  .field input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; appearance:none; width:15px; height:15px; border-radius:50%;
+    background:var(--ring); border:2px solid #fff; box-shadow:0 0 0 1px var(--ring); cursor:pointer;
+  }
+  .field input[type=range]::-moz-range-thumb{
+    width:15px; height:15px; border-radius:50%; background:var(--ring); border:2px solid #fff;
+    box-shadow:0 0 0 1px var(--ring); cursor:pointer;
+  }
+  .field input[type=range]::-moz-range-track{ height:4px; border-radius:2px; background:var(--line); }
+  .field select{width:100%; font-size:12px; font-family:var(--mono); padding:5px 6px; border:1px solid var(--line); border-radius:3px; background:#fbfcfd; color:var(--ink);}
+  .field .val{font-family:var(--mono); font-size:11px; color:var(--ring); min-width:66px; text-align:right;}
+  .checkline{display:flex; align-items:center; gap:6px; font-size:12px; margin-top:4px;}
+
+  .main{flex:1; display:flex; flex-direction:column; min-width:0;}
+  .section{background:var(--panel); border-bottom:1px solid var(--line); padding:14px 18px;}
+  .section h2{font-size:11px; text-transform:uppercase; letter-spacing:.6px; color:var(--sub); margin:0 0 4px;}
+  .section .sub{font-size:11px; color:var(--sub); margin-bottom:10px;}
+
+  .banner{
+    display:flex; gap:28px; flex-wrap:wrap; align-items:center;
+    background:#f5fbf9; border:1px solid #bfe3db; border-radius:6px; padding:12px 16px; margin-bottom:12px;
+  }
+  .banner .metric{font-family:var(--mono);}
+  .banner .metric .num{font-size:20px; font-weight:700; color:var(--calib);}
+  .banner .metric .lbl{font-size:10.5px; color:var(--sub); text-transform:uppercase; letter-spacing:.4px;}
+  .banner.fail{background:#fdf1e4; border-color:#e6c48a;}
+  .banner.fail .metric .num{color:var(--warn);}
+
+  .stage{width:100%; height:480px; perspective:1500px; border-radius:8px; overflow:hidden; position:relative; cursor:grab; user-select:none;
+    background:linear-gradient(180deg,#efe4c8 0%, #cdb583 30%, #8f7350 65%, #5c4934 100%);}
+  .stage:active{cursor:grabbing;}
+  .vignette{position:absolute; inset:0; pointer-events:none; background:radial-gradient(ellipse at 55% 45%, rgba(0,0,0,0) 45%, rgba(45,32,18,0.55) 100%);}
+  .world{width:100%; height:100%; position:relative; transform-style:preserve-3d; transform:rotateX(-24deg) rotateY(-28deg);}
+  .face{position:absolute; transform-style:preserve-3d;}
+  .label3d{position:absolute; font-family:var(--mono); font-size:11px; color:var(--ink); background:rgba(255,255,255,0.85); padding:1px 5px; border-radius:3px; white-space:nowrap; pointer-events:none;}
+  .label3d.mv{color:#fff; background:rgba(224,89,43,0.92); font-weight:600;}
+  .hint{font-family:var(--mono); font-size:11px; color:var(--sub); margin-top:6px;}
+  .legend{display:flex; gap:16px; font-size:11px; color:var(--sub); margin-top:6px; flex-wrap:wrap;}
+  .legend span{display:inline-flex; align-items:center; gap:5px;}
+  .swatch{width:14px; height:14px; display:inline-block; border-radius:50%;}
+
+  table{width:100%; border-collapse:collapse; font-family:var(--mono); font-size:12px; margin-top:8px;}
+  th, td{text-align:right; padding:6px 10px; border-bottom:1px solid var(--line);}
+  th:first-child, td:first-child{text-align:left;}
+  th{color:var(--sub); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.4px;}
+  td.pass{color:var(--ok); font-weight:600;}
+  td.fail{color:var(--bad); font-weight:700;}
+  tr.fail-row{background:#fdf0f0;}
+
+  details.calc{border:1px solid var(--line); border-radius:6px; background:var(--panel);}
+  details.calc summary{cursor:pointer; padding:10px 14px; font-family:var(--mono); font-size:12px; font-weight:600; list-style:none; display:flex; align-items:center; gap:8px;}
+  details.calc summary::before{content:"\25B8"; color:var(--sub);}
+  details.calc[open] summary::before{transform:rotate(90deg); display:inline-block;}
+  details.calc summary::-webkit-details-marker{display:none;}
+  .calc-body{padding:0 14px 14px;}
+  .calc-note{font-size:11.5px; color:var(--sub); line-height:1.6; margin-top:8px; background:#fbfaf6; border:1px solid #e6d9b8; border-radius:4px; padding:10px 12px;}
+
+  .card{border:1px solid var(--line); background:#fbfcfd; border-radius:6px; padding:14px 16px; margin-top:10px;}
+  .card.calib{border-color:#bfe3db; background:#f5fbf9;}
+  .card.optim{border-color:#e6d9b8; background:#fffdf6;}
+  .card .grid{display:flex; gap:16px; flex-wrap:wrap; align-items:flex-end;}
+  .card .field{margin-bottom:0; min-width:160px;}
+  .card input[type=text],.card input[type=number]{width:150px; font-family:var(--mono); font-size:12px; padding:5px 6px; border:1px solid var(--line); border-radius:3px;}
+  .go-btn{font-family:var(--mono); font-size:12px; color:#fff; border:none; padding:8px 16px; border-radius:4px; cursor:pointer;}
+  .go-btn.calib{background:var(--calib);}
+  .go-btn.optim{background:var(--warn);}
+  .result{font-family:var(--mono); font-size:12px; margin-top:10px; padding-top:10px; border-top:1px dashed var(--line); display:none;}
+  .result .line{margin:3px 0;}
+  .flag{display:inline-flex; align-items:center; gap:6px; margin-top:6px; padding:3px 8px; border-radius:3px; font-size:11.5px;}
+  .flag.warn{background:#fdf1e4; color:var(--warn);}
+  .flag.ok{background:#eaf6ee; color:var(--ok);}
+  .flag.bad{background:#fdeaea; color:var(--bad);}
+  .checks{display:flex; gap:14px; font-size:11.5px; align-items:center;}
+  .checks label{display:flex; gap:5px; align-items:center;}
+  .apply-btns{display:flex; gap:8px; margin-top:8px;}
+  .apply-btns button{font-family:var(--mono); font-size:11px; padding:5px 10px; border-radius:4px; border:1px solid var(--line); background:#fff; cursor:pointer;}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>ICCP Current Throw &amp; Protected-Length Estimator</h1>
+  <span class="tag">APPLICATION - V1</span>
+  <span class="note">simplified planning-level model - see calc trace for assumptions</span>
+</div>
+
+<div class="layout">
+
+  <!-- LEFT: INPUT PANEL -->
+  <div class="panel">
+    <h2>Rectifier &amp; Anode Bed</h2>
+    <div class="field"><label>Rectifier DC output voltage</label><div class="row"><input type="range" id="rectV" min="2" max="60" step="0.5"><span class="val" id="rectV_v"></span></div></div>
+    <div class="field"><label>Anode type</label>
+      <select id="anodeType">
+        <option value="hsci">High-silicon cast iron (~1.0 A/ft&sup2;)</option>
+        <option value="mmo">MMO tubular (~5 A/ft&sup2;)</option>
+        <option value="graphite">Graphite (~0.25 A/ft&sup2;)</option>
+      </select>
+    </div>
+    <div class="field"><label>Anode diameter</label><div class="row"><input type="range" id="anodeD" min="1" max="6" step="0.25"><span class="val" id="anodeD_v"></span></div></div>
+    <div class="field"><label>Anode length</label><div class="row"><input type="range" id="anodeL" min="2" max="10" step="0.5"><span class="val" id="anodeL_v"></span></div></div>
+    <div class="field"><label>Burial depth to center of bed</label><div class="row"><input type="range" id="anodeDepth" min="3" max="100" step="0.5"><span class="val" id="anodeDepth_v"></span></div></div>
+    <div class="field"><label># anodes</label><div class="row"><input type="range" id="anodeN" min="1" max="20" step="1"><span class="val" id="anodeN_v"></span></div></div>
+    <div class="field"><label>Anode spacing</label><div class="row"><input type="range" id="anodeS" min="3" max="30" step="1"><span class="val" id="anodeS_v"></span></div></div>
+
+    <h2>Soil / Coating</h2>
+    <div class="field"><label>Soil resistivity</label><div class="row"><input type="range" id="rho" min="500" max="15000" step="100"><span class="val" id="rho_v"></span></div></div>
+    <div class="field"><label>Coating resistance (specific, log scale)</label><div class="row"><input type="range" id="coatLog" min="2" max="6.3" step="0.05"><span class="val" id="coatLog_v"></span></div></div>
+    <div class="field"><label>Pipe wall thickness</label><div class="row"><input type="range" id="pipeWall" min="0.1" max="1.0" step="0.02"><span class="val" id="pipeWall_v"></span></div></div>
+    <div class="field"><label>Native (static) potential</label><div class="row"><input type="range" id="nativeMV" min="-750" max="-400" step="5"><span class="val" id="nativeMV_v"></span></div></div>
+
+    <h2>Pipeline / Geometry</h2>
+    <div class="field"><label>Perpendicular offset, bed to pipe</label><div class="row"><input type="range" id="offset" min="5" max="5280" step="5"><span class="val" id="offset_v"></span></div></div>
+    <div class="field"><label>Pipe depth of cover (to center)</label><div class="row"><input type="range" id="pipeDepth" min="2" max="10" step="0.5"><span class="val" id="pipeDepth_v"></span></div></div>
+    <div class="field"><label>Pipe diameter</label><div class="row"><input type="range" id="pipeD" min="2" max="48" step="1"><span class="val" id="pipeD_v"></span></div></div>
+    <div class="field"><label>Protection criterion</label>
+      <select id="criterion"><option value="m850">-850 mV (CSE)</option><option value="shift100">100 mV polarization shift</option></select>
+    </div>
+    <div class="checkline"><input type="checkbox" id="bothDir" checked><label for="bothDir">Bed throws current both directions along the line</label></div>
+
+    <h2>Calibration Factor</h2>
+    <div class="field"><label>Bed resistance multiplier (1.0 = as-designed)</label><div class="row"><input type="range" id="resMult" min="0.5" max="3" step="0.05"><span class="val" id="resMult_v"></span></div></div>
+  </div>
+
+  <!-- RIGHT: MAIN AREA -->
+  <div class="main">
+
+    <div class="section">
+      <div class="banner" id="banner">
+        <div class="metric"><div class="num" id="m_protLen">-</div><div class="lbl">protected length (ft)</div></div>
+        <div class="metric"><div class="num" id="m_current">-</div><div class="lbl">total current (A)</div></div>
+        <div class="metric"><div class="num" id="m_rbed">-</div><div class="lbl">bed resistance (&Omega;)</div></div>
+        <div class="metric"><div class="num" id="m_density">-</div><div class="lbl">current density (A/ft&sup2;)</div></div>
+      </div>
+
+      <h2>3D Scene - drag to orbit</h2>
+      <div class="stage" id="stage">
+        <div class="world" id="world"></div>
+        <div class="vignette"></div>
+      </div>
+      <div class="hint">Rebuilds live as inputs change. Pipe runs far past the frame in both directions (clipped by the view) to stand in for an effectively infinite line.</div>
+      <div class="legend">
+        <span><span class="swatch" style="background:#2a2a2a;"></span>anode rods</span>
+        <span><span class="swatch" style="background:#3f8f6a;"></span>pipeline - meets criterion</span>
+        <span><span class="swatch" style="background:#9aa4ad;"></span>pipeline - fails criterion</span>
+        <span><span class="swatch" style="background:transparent; border:2px solid #ffcf5c;"></span>equipotential shells (near-bed zone, illustrative)</span>
+        <span><span class="swatch" style="background:transparent; border:2.5px solid #b91c1c;"></span>pass&rarr;fail crossing</span>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Station Table</h2>
+      <div class="sub">Sampled points along the route, x = distance from the point on the pipe closest to the bed.</div>
+      <table id="stationTable"><thead>
+        <tr><th>Station x</th><th>Applied shift</th><th>Est. instant-off</th><th>vs. criterion</th></tr>
+      </thead><tbody></tbody></table>
+    </div>
+
+    <div class="section">
+      <details class="calc">
+        <summary>Show calculations (live)</summary>
+        <div class="calc-body">
+          <table>
+            <tr><th>Step</th><th>Formula</th><th>Result</th></tr>
+            <tr><td>1. Single-rod resistance</td><td>R1 = (0.00521&middot;&rho;/L)&middot;[ln(8L/d) - 1]</td><td id="c_r1">-</td></tr>
+            <tr><td>2. Bed resistance</td><td>Rg = R1/N + &rho;<sub>ft</sub>/(2&pi;NS)&middot;ln(1.65N), &times; calibration factor</td><td id="c_rbed">-</td></tr>
+            <tr><td>3. Pipe series resistance</td><td>r' = &rho;<sub>steel</sub> / wall area (steel, ~18 &micro;&Omega;-cm)</td><td id="c_rpipe">-</td></tr>
+            <tr><td>4. Coating leakage conductance</td><td>g' = &pi;D / R<sub>coating</sub> (per ft of pipe)</td><td id="c_gcoat">-</td></tr>
+            <tr><td>5. Attenuation constant</td><td>&alpha; = &radic;(r'&middot;g'), characteristic resistance R<sub>o</sub> = &radic;(r'/g')</td><td id="c_alpha">-</td></tr>
+            <tr><td>6. Access resistance &amp; current</td><td>R<sub>access</sub> = R<sub>o</sub>/2, I = V / (R<sub>bed</sub> + R<sub>access</sub>)</td><td id="c_i">-</td></tr>
+            <tr><td>7. Peak shift at nearest point</td><td>&Delta;V(0) = I &middot; R<sub>access</sub></td><td id="c_peak">-</td></tr>
+            <tr><td>8. Shift along the route</td><td>&Delta;V(x) = &Delta;V(0) &middot; e<sup>-&alpha;|x|</sup>, V(x) = native - &Delta;V(x)</td><td>see station table</td></tr>
+          </table>
+          <div class="calc-note" id="assumptionsNote"></div>
+        </div>
+      </details>
+    </div>
+
+    <div class="section">
+      <h2>Field Verification - Calibrate Against a Measured Point</h2>
+      <div class="sub">Enter an actual field instant-off reading at a known station; the model shows the error and two candidate fixes.</div>
+      <div class="card calib">
+        <div class="grid">
+          <div class="field"><label>Station x (ft)</label><input type="number" id="calX" value="150"></div>
+          <div class="field"><label>Measured instant-off (mV)</label><input type="number" id="calMV" value="-775"></div>
+          <button class="go-btn calib" id="calRun">Compare &amp; suggest fix</button>
+        </div>
+        <div class="result" id="calResult"></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Optimizer - Solve for a Target Protected Length</h2>
+      <div class="sub">Picks the smallest change to the free variables that reaches your target, subject to the current-density limit for the selected anode type.</div>
+      <div class="card optim">
+        <div class="checks">
+          <label><input type="checkbox" id="optV" checked> Rectifier voltage</label>
+          <label><input type="checkbox" id="optN"> # anodes</label>
+        </div>
+        <div class="grid" style="margin-top:12px;">
+          <div class="field"><label>Target one-directional throw (ft)</label><input type="number" id="optTarget" value="150"></div>
+          <button class="go-btn optim" id="optRun">Run optimizer &rarr;</button>
+        </div>
+        <div class="result" id="optResult"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+(function(){
+  // =========================================================================
+  // STATE
+  // =========================================================================
+  const state = {
+    rectV: 20, anodeType:'hsci', anodeD:3.0, anodeL:7.0, anodeDepth:10.0, anodeN:6, anodeS:15,
+    rho:3500, coatLog:4.5, pipeWall:0.28, nativeMV:-580,
+    offset:40, pipeDepth:4, pipeD:6, criterion:'m850', bothDir:true, resMult:1.0
+  };
+  const anodeDensityLimit = {hsci:1.0, mmo:5.0, graphite:0.25};
+  const STEEL_RHO_OHMCM = 1.8e-5; // ~18 micro-ohm-cm, typical carbon steel
+
+  // =========================================================================
+  // PHYSICS (simplified, planning-level approximations - see assumptions note)
+  //
+  // Protection along the route is governed by axial current flow through the
+  // pipe steel and leakage back out through coating holidays (a leaky
+  // transmission line), NOT by the anode's radial soil field extended along
+  // the route - that field only matters in the near-bed zone. This is what
+  // lets one bed protect miles of well-coated pipe. See conversation for the
+  // earlier (incorrect) radial-only version and why it capped out so short.
+  // =========================================================================
+  function ohmcmToOhmft(rho_ohmcm){ return rho_ohmcm/30.48; }
+
+  function singleRodResistance(rho_ohmcm, L_ft, d_in){
+    const d_ft = d_in/12;
+    return (0.00521*rho_ohmcm/L_ft) * (Math.log(8*L_ft/d_ft) - 1);
+  }
+
+  function groupResistance(rho_ohmcm, L_ft, d_in, N, S_ft){
+    const R1 = singleRodResistance(rho_ohmcm, L_ft, d_in);
+    if(N<=1) return {R1, Rg:R1};
+    const rho_ft = ohmcmToOhmft(rho_ohmcm);
+    const mutual = (rho_ft/(2*Math.PI*N*S_ft)) * Math.log(1.65*N);
+    return {R1, Rg: R1/N + mutual};
+  }
+
+  // pipe series resistance, ohm/ft
+  function pipeSeriesResistance(D_in, wall_in){
+    const Do = D_in, Di = D_in - 2*wall_in;
+    const A_in2 = Math.PI/4 * (Do*Do - Di*Di);
+    const A_cm2 = A_in2 * 6.4516;
+    return STEEL_RHO_OHMCM * 30.48 / A_cm2; // ohm per ft
+  }
+
+  // coating leakage conductance, mho/ft
+  function coatingConductance(D_in, Rcoat_ohmft2){
+    const D_ft = D_in/12;
+    const circumference_ft = Math.PI*D_ft;
+    return circumference_ft / Rcoat_ohmft2;
+  }
+
+  // full model from a parameter set
+  function buildModel(p){
+    const g = groupResistance(p.rho, p.anodeL, p.anodeD, p.anodeN, p.anodeS);
+    const Rbed = g.Rg * p.resMult;
+    const ddepth = Math.abs(p.anodeDepth - p.pipeDepth); // near-field geometry, informational only below
+
+    const Rcoat_ohmft2 = Math.pow(10, p.coatLog);
+    const rPipe = pipeSeriesResistance(p.pipeD, p.pipeWall);       // ohm/ft
+    const gCoat = coatingConductance(p.pipeD, Rcoat_ohmft2);       // mho/ft
+    const alpha = Math.sqrt(rPipe*gCoat);                          // 1/ft
+    const Ro = Math.sqrt(rPipe/gCoat);                             // ohm
+    const Raccess = Ro/2;                                          // ohm, pipe's access resistance at the pickup point
+
+    const Rtotal = Rbed + Raccess;
+    const I = p.rectV / Rtotal;
+    const peak0_mV = I * Raccess * 1000;
+
+    const anodeArea = Math.PI*(p.anodeD/12)*p.anodeL; // ft^2, lateral surface
+    const density = (I/p.anodeN)/anodeArea;
+
+    function stationAt(x){
+      const applied = peak0_mV * Math.exp(-alpha*Math.abs(x));
+      const finalMV = p.nativeMV - applied;
+      let pass;
+      if(p.criterion === 'm850'){ pass = finalMV <= -850; }
+      else { pass = applied >= 100; }
+      return {x, applied, finalMV, pass};
+    }
+    return {Rbed, R1:g.R1, I, ddepth, density, rPipe, gCoat, alpha, Ro, Raccess, Rtotal, peak0_mV, stationAt};
+  }
+
+  // bisection to find the x where pass -> fail (criterion crossing), null if never fails, 0 if fails immediately
+  function findCrossing(model, p){
+    function f(x){
+      const s = model.stationAt(x);
+      if(p.criterion==='m850') return s.finalMV - (-850); // <0 pass, >0 fail
+      return 100 - s.applied; // <0 pass, >0 fail
+    }
+    if(f(0) > 0) return 0; // fails at the bed itself
+    let lo=0, hi=200000; // up to ~38 miles, since good coating can throw very far
+    if(f(hi) < 0) return null; // never fails within model range -> effectively unlimited
+    for(let i=0;i<60;i++){
+      const mid=(lo+hi)/2;
+      if(f(mid)>0) hi=mid; else lo=mid;
+    }
+    return (lo+hi)/2;
+  }
+
+  // =========================================================================
+  // UI: bind sliders
+  // =========================================================================
+  const bindings = [
+    ['rectV','rectV', v=>v.toFixed(1)+' V'],
+    ['anodeD','anodeD', v=>v.toFixed(2)+'"'],
+    ['anodeL','anodeL', v=>v.toFixed(1)+" ft"],
+    ['anodeDepth','anodeDepth', v=>v.toFixed(1)+" ft"],
+    ['anodeN','anodeN', v=>v.toFixed(0)],
+    ['anodeS','anodeS', v=>v.toFixed(0)+" ft"],
+    ['rho','rho', v=>Math.round(v).toLocaleString()+" ohm-cm"],
+    ['coatLog','coatLog', v=>Math.round(Math.pow(10,v)).toLocaleString()+" ohm-ft\u00b2"],
+    ['pipeWall','pipeWall', v=>v.toFixed(2)+'"'],
+    ['nativeMV','nativeMV', v=>Math.round(v)+" mV"],
+    ['offset','offset', v=>(v>=5280 ? (v/5280).toFixed(2)+" mi" : v.toFixed(0)+" ft")],
+    ['pipeDepth','pipeDepth', v=>v.toFixed(1)+" ft"],
+    ['pipeD','pipeD', v=>v.toFixed(0)+'"'],
+    ['resMult','resMult', v=>'x'+v.toFixed(2)]
+  ];
+  // Throttle recompute() to at most once per animation frame. Without this, a fast slider drag
+  // can fire 'input' events faster than each recompute() finishes, building a growing backlog
+  // that the page then has to chew through even after you stop moving the slider - which shows
+  // up as exactly this kind of multi-second freeze. The value label next to each slider still
+  // updates instantly (that part is cheap); only the heavier banner/table/calc-trace/scene work
+  // is deferred and coalesced to the latest state.
+  let recomputeScheduled = false;
+  function scheduleRecompute(){
+    if(recomputeScheduled) return;
+    recomputeScheduled = true;
+    requestAnimationFrame(function(){
+      recomputeScheduled = false;
+      recompute();
+    });
+  }
+
+  bindings.forEach(([id,key,fmt])=>{
+    const input = document.getElementById(id);
+    input.value = state[key];
+    document.getElementById(id+'_v').textContent = fmt(state[key]);
+    input.addEventListener('input', ()=>{
+      state[key] = parseFloat(input.value);
+      document.getElementById(id+'_v').textContent = fmt(state[key]);
+      scheduleRecompute();
+    });
+  });
+  document.getElementById('anodeType').addEventListener('change', e=>{ state.anodeType=e.target.value; scheduleRecompute(); });
+  document.getElementById('criterion').addEventListener('change', e=>{ state.criterion=e.target.value; scheduleRecompute(); });
+  document.getElementById('bothDir').addEventListener('change', e=>{ state.bothDir=e.target.checked; scheduleRecompute(); });
+  document.getElementById('anodeType').value = state.anodeType;
+  document.getElementById('criterion').value = state.criterion;
+
+  // =========================================================================
+  // RENDER: banner, station table, calc trace
+  // =========================================================================
+  const stationMults = [0,0.02,0.05,0.1,0.2,0.35,0.5,0.75,1.0,1.5,2.0];
+  function stationListFor(crossX){
+    const ref = (crossX===null) ? 5000 : (crossX===0 ? 50 : crossX);
+    return stationMults.map(function(m){ return Math.round(m*ref); });
+  }
+
+  function recompute(){
+   try {
+    const model = buildModel(state);
+    const crossX = findCrossing(model, state);
+    let protLen, protLenLabel;
+    if(crossX === null){ protLen = Infinity; protLenLabel = '>200000'; }
+    else if(crossX === 0){ protLen = 0; protLenLabel = '0'; }
+    else { protLen = state.bothDir ? crossX*2 : crossX; protLenLabel = Math.round(protLen).toLocaleString(); }
+
+    const banner = document.getElementById('banner');
+    banner.classList.toggle('fail', crossX===0);
+    document.getElementById('m_protLen').textContent = protLenLabel;
+    document.getElementById('m_current').textContent = model.I.toFixed(1);
+    document.getElementById('m_rbed').textContent = model.Rbed.toFixed(2);
+    const densLimit = anodeDensityLimit[state.anodeType];
+    const densEl = document.getElementById('m_density');
+    densEl.textContent = model.density.toFixed(2) + (model.density>densLimit ? ' (over limit!)' : '');
+    densEl.style.color = model.density>densLimit ? 'var(--bad)' : '';
+
+    // station table - stations scaled to the actual computed throw distance
+    const tbody = document.querySelector('#stationTable tbody');
+    tbody.innerHTML = '';
+    stationListFor(crossX).forEach(function(x){
+      const s = model.stationAt(x);
+      const tr = document.createElement('tr');
+      if(!s.pass) tr.className='fail-row';
+      const xLabel = x>=5280 ? (x/5280).toFixed(2)+' mi' : x+' ft';
+      tr.innerHTML = '<td>'+xLabel+'</td><td>'+s.applied.toFixed(0)+' mV</td>'+
+        '<td>'+s.finalMV.toFixed(0)+' mV</td>'+
+        '<td class="'+(s.pass?'pass':'fail')+'">'+(s.pass?'PASS':'FAIL')+'</td>';
+      tbody.appendChild(tr);
+    });
+
+    // calc trace
+    document.getElementById('c_r1').textContent = model.R1.toFixed(2)+' ohm';
+    document.getElementById('c_rbed').textContent = model.Rbed.toFixed(2)+' ohm (x'+state.resMult.toFixed(2)+' calibration)';
+    document.getElementById('c_rpipe').textContent = model.rPipe.toExponential(2)+' ohm/ft';
+    document.getElementById('c_gcoat').textContent = model.gCoat.toExponential(2)+' mho/ft';
+    document.getElementById('c_alpha').textContent = 'alpha='+model.alpha.toExponential(2)+'/ft (1/e length '+Math.round(1/model.alpha).toLocaleString()+' ft), Ro='+model.Ro.toFixed(2)+' ohm';
+    document.getElementById('c_i').textContent = model.I.toFixed(2)+' A (R_access='+model.Raccess.toFixed(2)+' ohm, R_total='+model.Rtotal.toFixed(2)+' ohm)';
+    document.getElementById('c_peak').textContent = model.peak0_mV.toFixed(0)+' mV';
+    document.getElementById('assumptionsNote').innerHTML =
+      'Assumptions: bed treated as an equivalent point/group source (Dwight single-rod + a simplified group-interference term - '+
+      'validate against NACE/Peabody group formulas or dedicated CP software before final design). Protection along the route is '+
+      'modeled as a leaky transmission line (steel series resistance vs. coating leakage conductance) - this is what lets one bed '+
+      'reach miles of well-coated pipe; a short-lived earlier version of this tool incorrectly used the anode\'s radial soil field '+
+      'for the whole route and understated throw distance by orders of magnitude. Anode-to-pipe offset and depth difference are '+
+      'geometric context (shown in the 3D scene) but do not enter this long-line throw calculation - matching standard CP practice, '+
+      'where coating quality and pipe resistance set the throw, not bed-to-pipe distance. Steel resistivity fixed at ~18 micro-ohm-cm. '+
+      'Current density limit for the selected anode type is a representative default, not manufacturer data.';
+
+    scheduleSceneUpdate(model, state, crossX, protLen);
+   } catch(err){
+     console.error('recompute failed:', err);
+   }
+  }
+
+  // rebuilding the 3D scene is expensive (creates/removes ~30+ DOM nodes with 3D transforms);
+  // batching it to once per animation frame keeps sliders smooth during a drag instead of
+  // rebuilding on every single 'input' tick.
+  let latestSceneArgs = null, sceneRAFScheduled = false;
+  function scheduleSceneUpdate(model, p, crossX, protLen){
+    latestSceneArgs = {model, p:Object.assign({}, p), crossX, protLen};
+    if(sceneRAFScheduled) return;
+    sceneRAFScheduled = true;
+    requestAnimationFrame(function(){
+      sceneRAFScheduled = false;
+      const a = latestSceneArgs;
+      updateScene(a.model, a.p, a.crossX, a.protLen);
+    });
+  }
+
+  // =========================================================================
+  // 3D SCENE
+  // =========================================================================
+  const world = document.getElementById('world');
+  const stageEl = document.getElementById('stage');
+  const FT = 6;     // px per ft, fixed reference used only for small dimensions (rod spacing, near-field shells)
+
+  function el(cls, styleText){
+    const d = document.createElement('div');
+    d.className = cls;
+    d.style.cssText = styleText || '';
+    return d;
+  }
+
+  // persistent billboard labels: created once, only text/position/visibility mutated after that
+  const labelDefs = ['anode','pipe','crossPos','crossNeg'];
+  const labelRefs = {};
+  labelDefs.forEach(function(key){
+    const cls = key.indexOf('cross')===0 ? 'label3d mv' : 'label3d';
+    const d = el(cls);
+    d.style.display = 'none';
+    world.appendChild(d);
+    labelRefs[key] = {el:d, x:0, y:0, z:0};
+  });
+  let curRotX=-24, curRotY=-28;
+  function updateLabelOrientations(){
+    labelDefs.forEach(function(key){
+      const L = labelRefs[key];
+      L.el.style.transform = 'translate3d('+L.x+'px, '+L.y+'px, '+L.z+'px) rotateY('+(-curRotY)+'deg) rotateX('+(-curRotX)+'deg)';
+    });
+  }
+  function setLabel(key, visible, text, x, y, z){
+    const L = labelRefs[key];
+    L.el.style.display = visible ? '' : 'none';
+    if(!visible) return;
+    if(text!==undefined) L.el.textContent = text;
+    L.x=x; L.y=y; L.z=z;
+  }
+
+  // persistent hex-prism cylinder: geometry (length/radius) and placement are mutated in place, never recreated
+  function createCylinder(radius, color){
+    const group = el('face', 'transform-style:preserve-3d; left:0; top:0;');
+    const sides = 8, faces=[];
+    for(let i=0;i<sides;i++){
+      const angle = (360/sides)*i;
+      const shade = 0.55 + 0.45*Math.abs(Math.cos(angle*Math.PI/180));
+      const face = el('face', 'background:'+color+'; opacity:'+shade+'; transform-origin:50% 50%; '+
+        'transform:rotateY('+angle+'deg) translateZ('+radius+'px) rotateZ(90deg);');
+      group.appendChild(face);
+      faces.push(face);
+    }
+    world.appendChild(group);
+    return {group, faces, radius};
+  }
+  function setCylinderLength(cyl, length){
+    const faceH = 2*cyl.radius*Math.tan(Math.PI/8);
+    cyl.faces.forEach(function(f){
+      f.style.width = length+'px';
+      f.style.left = (-length/2)+'px';
+      f.style.height = faceH.toFixed(2)+'px';
+      f.style.top = (-faceH/2)+'px';
+    });
+  }
+  function setPlacement(groupEl, x, y, z, orient, visible){
+    groupEl.style.display = (visible===false) ? 'none' : '';
+    if(visible===false) return;
+    groupEl.style.transform = 'translate3d('+x+'px, '+y+'px, '+z+'px) '+(orient||'');
+  }
+
+  // ---- build the fixed set of scene elements ONCE ----
+  const ground = el('face',
+    'width:2400px; height:2400px; left:-1200px; top:-1200px; '+
+    'background-image: repeating-linear-gradient(0deg, rgba(0,0,0,0.06) 0 1px, transparent 1px '+(FT*10)+'px), '+
+    'repeating-linear-gradient(90deg, rgba(0,0,0,0.06) 0 1px, transparent 1px '+(FT*10)+'px); '+
+    'background-color: rgba(210,190,150,0.35); transform: rotateX(90deg) translateZ(0px);'
+  );
+  world.appendChild(ground);
+
+  const MAX_RODS = 5;
+  const rods = [];
+  for(let i=0;i<MAX_RODS;i++) rods.push(createCylinder(4, '#2a2a2a'));
+
+  const pipeMid = createCylinder(6, '#3f8f6a');   // meets criterion
+  const pipePos = createCylinder(6, '#9aa4ad');   // fails, +x direction
+  const pipeNeg = createCylinder(6, '#9aa4ad');   // fails, -x direction
+
+  const crossRingPos = el('face', 'width:26px; height:26px; left:-13px; top:-13px; border-radius:50%; '+
+    'border:2.5px solid #b91c1c; box-shadow:0 0 8px rgba(185,28,28,0.6); display:none;');
+  const crossRingNeg = el('face', 'width:26px; height:26px; left:-13px; top:-13px; border-radius:50%; '+
+    'border:2.5px solid #b91c1c; box-shadow:0 0 8px rgba(185,28,28,0.6); display:none;');
+  world.appendChild(crossRingPos);
+  world.appendChild(crossRingNeg);
+
+  const SHELL_COUNT = 5;
+  const shellHolders = [];
+  for(let s=0;s<SHELL_COUNT;s++){
+    const rings = [];
+    ['rotateX(0deg)','rotateY(90deg)','rotateX(90deg)'].forEach(function(rot){
+      const holder = el('face', 'left:0; top:0; transform-style:preserve-3d;');
+      const ring = el('face', 'border:1.4px solid #ffcf5c; border-radius:50%; transform:'+rot+';');
+      holder.appendChild(ring);
+      world.appendChild(holder);
+      rings.push({holder, ring});
+    });
+    shellHolders.push(rings);
+  }
+
+  // ---- update the scene in place on every recompute (no create/remove -> no flicker) ----
+  function updateScene(model, p, crossX, protLen){
+    // depth (Y axis) is adaptive: anode burial depth can now range up to 100 ft, so a fixed
+    // px/ft would push a deep bed off the bottom of the view. Scaled to land around the same
+    // target height regardless of how deep the bed is.
+    const desiredDepthPx = 180;
+    const FTY = Math.max(1.2, Math.min(10, desiredDepthPx/Math.max(p.anodeDepth, p.pipeDepth, 5)));
+
+    const anodeX=0, anodeY=p.anodeDepth*FTY, anodeZ=0;
+    const rodSpacingPx = Math.min(p.anodeS*FT*0.5, 20);
+    const visibleRods = Math.min(p.anodeN, MAX_RODS);
+    const startOff = -(visibleRods-1)*rodSpacingPx/2;
+    rods.forEach(function(rod, i){
+      if(i<visibleRods){
+        setCylinderLength(rod, p.anodeL*FTY);
+        setPlacement(rod.group, anodeX+startOff+i*rodSpacingPx, anodeY, anodeZ, '', true);
+      } else {
+        setPlacement(rod.group, 0,0,0,'', false);
+      }
+    });
+    setLabel('anode', true, 'anode bed ('+p.anodeDepth.toFixed(0)+' ft, '+p.anodeN+' anodes)', anodeX-90, anodeY-40, anodeZ);
+
+    // offset (X axis) is also adaptive - it can range from 5 ft to 1 mile, so a fixed px/ft
+    // would put the pipe off-screen at large offsets.
+    const desiredOffsetPx = 400;
+    const FTX = Math.max(0.02, Math.min(8, desiredOffsetPx/Math.max(p.offset,5)));
+    const pipeX = p.offset*FTX, pipeY = p.pipeDepth*FTY;
+    // pixel-per-ft along the route is now adaptive: throws can range from tens of ft to tens of
+    // thousands, so a fixed scale would either be unreadable or put everything at one pixel.
+    const desiredCrossPx = 380;
+    const crossFt = (crossX===null) ? 100000 : (crossX===0 ? 5 : crossX);
+    const FTZ = Math.max(0.0005, Math.min(3, desiredCrossPx/crossFt));
+    const crossZ = crossFt*FTZ;
+    const farReachFt = crossFt*2.2;
+    const farZ = farReachFt*FTZ;
+
+    function placeSeg(cyl, zFrom, zTo, visible){
+      const v = visible && (zTo>zFrom);
+      if(v) setCylinderLength(cyl, zTo-zFrom);
+      setPlacement(cyl.group, pipeX, pipeY, (zFrom+zTo)/2, 'rotateX(90deg)', v);
+    }
+
+    if(crossX===0){
+      placeSeg(pipeMid, 0, 0, false);
+      placeSeg(pipePos, 0, farZ, true);
+      placeSeg(pipeNeg, -farZ, 0, true);
+      setLabel('crossPos', false); setLabel('crossNeg', false);
+      setPlacement(crossRingPos, 0,0,0,'',false);
+      setPlacement(crossRingNeg, 0,0,0,'',false);
+    } else if(crossX===null){
+      placeSeg(pipeMid, -farZ, farZ, true);
+      placeSeg(pipePos, 0, 0, false);
+      placeSeg(pipeNeg, 0, 0, false);
+      setLabel('crossPos', false); setLabel('crossNeg', false);
+      setPlacement(crossRingPos, 0,0,0,'',false);
+      setPlacement(crossRingNeg, 0,0,0,'',false);
+    } else {
+      placeSeg(pipeMid, -crossZ, crossZ, true);
+      placeSeg(pipePos, crossZ, farZ, true);
+      placeSeg(pipeNeg, -farZ, -crossZ, true);
+      setPlacement(crossRingPos, pipeX, pipeY, crossZ, '', true);
+      setPlacement(crossRingNeg, pipeX, pipeY, -crossZ, '', true);
+      setLabel('crossPos', true, 'criterion crossing (~'+Math.round(crossFt)+' ft)', pipeX+18, pipeY-14, crossZ);
+      setLabel('crossNeg', true, 'criterion crossing (~'+Math.round(crossFt)+' ft)', pipeX+18, pipeY-14, -crossZ);
+    }
+    setLabel('pipe', true, 'pipeline, '+p.pipeDepth.toFixed(0)+' ft cover, '+p.pipeD.toFixed(0)+'" OD', pipeX+20, pipeY-40, 0);
+
+    // equipotential shells: near-bed coupling zone (illustrative, physically only tens of ft in
+    // reality) - sized independently of offset so they stay a modest, consistent ripple near the
+    // anode even when the pipe is a mile away, rather than scaling with the (now huge) offset.
+    const nearFieldFt = Math.max(15, model.ddepth*3, p.anodeL*2);
+    const shellMults = [0.3, 0.6, 1.0, 1.6, 2.4];
+    shellHolders.forEach(function(rings, idx){
+      const r = nearFieldFt*shellMults[idx]*FT;
+      const op = Math.max(0.5 - idx*0.08, 0.12);
+      rings.forEach(function(pair){
+        pair.holder.style.transform = 'translate3d('+anodeX+'px, '+anodeY+'px, '+anodeZ+'px)';
+        pair.ring.style.width = (2*r)+'px';
+        pair.ring.style.height = (2*r)+'px';
+        pair.ring.style.left = (-r)+'px';
+        pair.ring.style.top = (-r)+'px';
+        pair.ring.style.opacity = op;
+      });
+    });
+
+    updateLabelOrientations();
+  }
+
+  // drag to orbit
+  let dragging=false, lastX=0, lastY=0;
+  stageEl.addEventListener('mousedown', function(e){dragging=true; lastX=e.clientX; lastY=e.clientY;});
+  window.addEventListener('mouseup', function(){dragging=false;});
+  window.addEventListener('mousemove', function(e){
+    if(!dragging) return;
+    const dx=e.clientX-lastX, dy=e.clientY-lastY;
+    curRotY += dx*0.3; curRotX -= dy*0.3;
+    curRotX = Math.max(-85, Math.min(10, curRotX));
+    world.style.transform = 'rotateX('+curRotX+'deg) rotateY('+curRotY+'deg)';
+    updateLabelOrientations();
+    lastX=e.clientX; lastY=e.clientY;
+  });
+
+  // =========================================================================
+  // CALIBRATION
+  // =========================================================================
+  document.getElementById('calRun').addEventListener('click', function(){
+    const x = parseFloat(document.getElementById('calX').value);
+    const measured = parseFloat(document.getElementById('calMV').value);
+    const model = buildModel(state);
+    const s = model.stationAt(x);
+    const error = measured - s.finalMV;
+    const reqApplied = state.nativeMV - measured;
+    const box = document.getElementById('calResult');
+    box.style.display = 'block';
+    if(reqApplied<=0 || s.applied<=0){
+      box.innerHTML = '<div class="line">Estimated: '+s.finalMV.toFixed(0)+' mV &middot; Measured: '+measured.toFixed(0)+' mV &middot; Error: '+error.toFixed(0)+' mV</div>'+
+        '<div class="flag bad">Measured reading implies no effective applied shift at this station - check wiring, rectifier polarity, or reference cell placement before trusting calibration here.</div>';
+      return;
+    }
+
+    // candidate 1: bed resistance multiplier (analytic - alpha/Raccess don't depend on resMult)
+    const targetPeak0 = reqApplied * Math.exp(model.alpha*x);
+    const Rbed0 = model.Rbed/state.resMult;
+    const RtotalNeeded = (state.rectV*model.Raccess*1000)/targetPeak0;
+    const RbedNeeded = RtotalNeeded - model.Raccess;
+    const resMultSuggested = RbedNeeded/Rbed0;
+    const resValid = resMultSuggested>0 && resMultSuggested<=10;
+
+    // candidate 2: coating resistance (numeric bisection - affects both decay rate and access resistance)
+    function appliedForCoatLog(cl){
+      const p = Object.assign({}, state, {coatLog:cl});
+      return buildModel(p).stationAt(x).applied;
+    }
+    let lo=2, hi=6.3, coatLogSuggested=null;
+    if(appliedForCoatLog(lo) >= reqApplied){ coatLogSuggested = lo; }
+    else if(appliedForCoatLog(hi) <= reqApplied){ coatLogSuggested = null; } // even best coating can't reach it
+    else {
+      for(let i=0;i<40;i++){
+        const mid=(lo+hi)/2;
+        if(appliedForCoatLog(mid) < reqApplied) lo=mid; else hi=mid;
+      }
+      coatLogSuggested = (lo+hi)/2;
+    }
+
+    let html = '<div class="line">Estimated: '+s.finalMV.toFixed(0)+' mV &middot; Measured: '+measured.toFixed(0)+' mV &middot; Error: '+error.toFixed(0)+' mV</div>';
+    if(resValid){
+      html += '<div class="line">Candidate 1 - bed resistance changed: multiplier '+state.resMult.toFixed(2)+' &rarr; '+resMultSuggested.toFixed(2)+' (proxy for anode consumption / bed degradation)</div>';
+    } else {
+      html += '<div class="line">Candidate 1 - bed resistance: not achievable within a reasonable range at this station.</div>';
+    }
+    if(coatLogSuggested!==null){
+      html += '<div class="line">Candidate 2 - coating condition differs: '+Math.round(Math.pow(10,state.coatLog)).toLocaleString()+' &rarr; '+Math.round(Math.pow(10,coatLogSuggested)).toLocaleString()+' ohm-ft&sup2;</div>';
+    } else {
+      html += '<div class="line">Candidate 2 - coating resistance: even excellent coating can\'t explain this large a gap alone.</div>';
+    }
+    html += '<div class="flag warn">Both explain the same error equally well from one point alone - a second field reading at a different station would disambiguate them (bed resistance shifts every station proportionally; coating changes bend the decay curve). Pick the one field judgment favors.</div>';
+    html += '<div class="apply-btns">'+
+      (resValid ? '<button id="applyRes">Apply candidate 1 (resistance)</button>' : '')+
+      (coatLogSuggested!==null ? '<button id="applyCoat">Apply candidate 2 (coating)</button>' : '')+
+      '</div>';
+    box.innerHTML = html;
+
+    if(resValid){
+      document.getElementById('applyRes').addEventListener('click', function(){
+        state.resMult = Math.max(0.5, Math.min(3, resMultSuggested));
+        document.getElementById('resMult').value = state.resMult;
+        document.getElementById('resMult_v').textContent = 'x'+state.resMult.toFixed(2);
+        recompute();
+      });
+    }
+    if(coatLogSuggested!==null){
+      document.getElementById('applyCoat').addEventListener('click', function(){
+        state.coatLog = Math.max(2, Math.min(6.3, coatLogSuggested));
+        document.getElementById('coatLog').value = state.coatLog;
+        document.getElementById('coatLog_v').textContent = Math.round(Math.pow(10,state.coatLog)).toLocaleString()+' ohm-ft\u00b2';
+        recompute();
+      });
+    }
+  });
+
+  // =========================================================================
+  // OPTIMIZER
+  // =========================================================================
+  document.getElementById('optRun').addEventListener('click', function(){
+    const target = parseFloat(document.getElementById('optTarget').value);
+    const useV = document.getElementById('optV').checked;
+    const useN = document.getElementById('optN').checked;
+    const box = document.getElementById('optResult');
+    box.style.display = 'block';
+
+    function crossingFor(p){
+      const m = buildModel(p);
+      const c = findCrossing(m, p);
+      return {model:m, crossX: c===null ? 999999 : c};
+    }
+
+    if(!useV && !useN){
+      box.innerHTML = '<div class="flag warn">Select at least one free variable.</div>';
+      return;
+    }
+
+    let bestP = null, bestV = null, bestN = state.anodeN;
+    const Ns = useN ? [state.anodeN, state.anodeN+2, state.anodeN+4, state.anodeN+8] : [state.anodeN];
+
+    for(let ni=0; ni<Ns.length; ni++){
+      const N = Ns[ni];
+      if(!useV){
+        const p = Object.assign({}, state, {anodeN:N});
+        const r = crossingFor(p);
+        if(r.crossX >= target){ bestP=p; bestV=state.rectV; bestN=N; break; }
+        continue;
+      }
+      // bisection on rectV in [2,80] for this N
+      let lo=2, hi=80;
+      const pHi = Object.assign({}, state, {anodeN:N, rectV:hi});
+      if(crossingFor(pHi).crossX < target) continue; // even max voltage can't reach target at this N
+      for(let i=0;i<40;i++){
+        const mid=(lo+hi)/2;
+        const p = Object.assign({}, state, {anodeN:N, rectV:mid});
+        if(crossingFor(p).crossX >= target) hi=mid; else lo=mid;
+      }
+      const pFinal = Object.assign({}, state, {anodeN:N, rectV:hi});
+      const r = crossingFor(pFinal);
+      const m = r.model;
+      const densLimit = anodeDensityLimit[state.anodeType];
+      if(m.density <= densLimit){ bestP=pFinal; bestV=hi; bestN=N; break; }
+    }
+
+    if(!bestP){
+      box.innerHTML = '<div class="flag bad">Target not reachable within the search range (rectifier up to 80 V, anode count up to +8) without exceeding the current-density limit. Consider a second bed, larger/more anodes, or a lower target.</div>';
+      return;
+    }
+    const m = buildModel(bestP);
+    box.innerHTML =
+      '<div class="line">Recommended: rectifier voltage '+state.rectV.toFixed(1)+' V &rarr; <b>'+bestV.toFixed(1)+' V</b>'+(useN?(', anodes '+state.anodeN+' &rarr; <b>'+bestN+'</b>'):'')+'</div>'+
+      '<div class="line">Resulting current draw: <b>'+m.I.toFixed(1)+' A</b> &middot; current density: <b>'+m.density.toFixed(2)+' A/ft&sup2;</b> (limit '+anodeDensityLimit[state.anodeType]+')</div>'+
+      '<div class="flag ok">meets '+target+' ft one-directional throw target</div>'+
+      '<div class="apply-btns"><button id="applyOpt">Apply these values</button></div>';
+    document.getElementById('applyOpt').addEventListener('click', function(){
+      state.rectV = bestV; state.anodeN = bestN;
+      document.getElementById('rectV').value = bestV;
+      document.getElementById('rectV_v').textContent = bestV.toFixed(1)+' V';
+      document.getElementById('anodeN').value = bestN;
+      document.getElementById('anodeN_v').textContent = bestN.toFixed(0);
+      recompute();
+    });
+  });
+
+  // initial render
+  recompute();
+})();
+</script>
+
+</body>
+</html>

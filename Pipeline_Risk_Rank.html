@@ -1,0 +1,564 @@
+<title>Fleet Risk Ranker</title>
+<meta name="description" content="Pipeline fleet risk ranking: LoF from remaining life and pigging compliance, CoF from release cost with escalation, plotted on a 5x5 matrix.">
+<style>
+:root{
+  color-scheme: light;
+  --ground:#F4F6F5; --paper:#FFFFFF; --ink:#18201E; --ink2:#4A5754; --muted:#76837F;
+  --rule:#D6DDDA; --rule2:#E8EDEB; --steel:#2F5D6E; --steel-soft:#E3EDF0;
+  --low:#6FA878; --med:#E2BC4E; --high:#E08A45; --vhigh:#C9453F;
+  --low-bg:#E4F0E5; --med-bg:#FBF1D2; --high-bg:#FBE3D0; --vhigh-bg:#F6D6D3;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font:14px/1.5 var(--sans);margin:0}
+.wrap{max-width:1320px;margin:0 auto;padding-inline:20px;padding-block:20px 60px}
+header.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px 24px;border-bottom:2px solid var(--ink);padding-bottom:12px}
+h1{font-size:22px;letter-spacing:-.01em;margin:0;text-wrap:balance}
+.sub{color:var(--ink2);font-size:13px;margin:2px 0 0}
+.eq{font-family:var(--mono);font-size:12.5px;color:var(--steel);background:var(--steel-soft);padding:6px 10px;border-radius:4px}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink2);margin:0 0 10px;font-weight:650}
+h3{font-size:14px;margin:14px 0 6px}
+section.panel{background:var(--paper);border:1px solid var(--rule);border-radius:6px;padding:16px}
+.grid-top{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:16px;margin-top:16px}
+@media (max-width:980px){.grid-top{grid-template-columns:minmax(0,1fr)}}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:3px 9px;border-radius:999px;border:1px solid var(--rule);background:var(--paper);font-variant-numeric:tabular-nums}
+.dot{width:9px;height:9px;border-radius:50%;display:inline-block}
+.tbl-wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+th,td{padding:6px 8px;border-bottom:1px solid var(--rule2);text-align:left;white-space:nowrap;font-size:12.5px}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600;border-bottom:1px solid var(--rule)}
+td.num,th.num{text-align:right}
+tbody tr{cursor:pointer}
+tbody tr:hover{background:#F2F6F7}
+tbody tr.sel{background:var(--steel-soft)}
+.pill{display:inline-block;min-width:26px;text-align:center;padding:1px 7px;border-radius:3px;font-weight:650;font-size:12px}
+.b-low{background:var(--low-bg);color:#2E5E37}.b-med{background:var(--med-bg);color:#6E5510}
+.b-high{background:var(--high-bg);color:#7A3E10}.b-vhigh{background:var(--vhigh-bg);color:#7D1E19}
+svg text{font-family:var(--sans)}
+.btn{font:inherit;font-size:12.5px;padding:6px 11px;border:1px solid var(--rule);background:var(--paper);border-radius:4px;cursor:pointer;color:var(--ink)}
+.btn:hover{border-color:var(--steel);color:var(--steel)}
+.btn.pri{background:var(--steel);color:#fff;border-color:var(--steel)}
+.btn.pri:hover{background:#244B59;color:#fff}
+.btn:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--steel);outline-offset:1px}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.editor{margin-top:16px}
+.fgroups{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px}
+fieldset{border:1px solid var(--rule2);border-radius:5px;padding:10px 12px 12px;margin:0;min-width:0}
+legend{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--steel);font-weight:650;padding:0 4px}
+.f{display:grid;grid-template-columns:1fr 118px;gap:8px;align-items:center;margin-top:6px}
+.f label{font-size:12.5px;color:var(--ink2);line-height:1.25}
+.f label small{display:block;color:var(--muted);font-size:10.5px}
+.f input,.f select{font:inherit;font-size:12.5px;padding:4px 6px;border:1px solid var(--rule);border-radius:3px;width:100%;background:#fff;color:var(--ink);font-family:var(--mono)}
+.f select{font-family:var(--sans)}
+.trace{margin-top:16px}
+.trace table td{white-space:normal;vertical-align:top}
+.trace td.v{font-family:var(--mono);white-space:nowrap}
+.trace td.fx{font-family:var(--mono);color:var(--ink2);font-size:12px}
+.trace tr.hd td{background:var(--rule2);font-weight:650;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink2)}
+.trace tr.res td{font-weight:650}
+sup a{color:var(--steel);text-decoration:none;font-weight:650;font-size:10px}
+.settings .f{grid-template-columns:1fr 90px}
+.notes ol{padding-left:22px;margin:0}
+.notes li{margin:0 0 14px;max-width:95ch}
+.notes .nt{font-weight:650}
+.notes .frm{font-family:var(--mono);font-size:12px;background:var(--rule2);padding:3px 7px;border-radius:3px;display:inline-block;margin:3px 0}
+.notes .why{color:var(--ink2)}
+.notes .ref{color:var(--muted);font-size:12.5px}
+.notes li:target{background:var(--steel-soft);outline:6px solid var(--steel-soft)}
+.flag{color:#7A3E10;font-size:12px}
+textarea{width:100%;min-height:110px;font-family:var(--mono);font-size:11.5px;border:1px solid var(--rule);border-radius:4px;padding:8px}
+.muted{color:var(--muted)}
+.small{font-size:12px}
+.cols2{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+.legend-row{display:flex;flex-wrap:wrap;gap:14px;font-size:11.5px;color:var(--ink2);margin-top:6px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+<header class="top">
+  <div>
+    <h1>Fleet Risk Ranker</h1>
+    <p class="sub">Pipeline risk ranking model &middot; Likelihood of Failure (LoF) x Consequence of Failure (CoF) &middot; all calculations footnoted below</p>
+  </div>
+  <div class="eq">Risk = LoF(RL<sub>eff</sub>) x CoF(cost, volume, escalation)</div>
+</header>
+
+<div class="grid-top">
+  <section class="panel" aria-label="Risk matrix">
+    <div class="bar" style="justify-content:space-between;margin-bottom:6px">
+      <h2 style="margin:0">Risk matrix <sup><a href="#n13">[13]</a></sup></h2>
+      <div class="chips" id="chips"></div>
+    </div>
+    <div id="plot"></div>
+    <div class="legend-row"><span>Point position inside a cell is interpolated within the band (log scale) so lines in the same cell stay distinguishable.</span></div>
+  </section>
+
+  <section class="panel" aria-label="Ranked lines">
+    <div class="bar" style="justify-content:space-between;margin-bottom:8px">
+      <h2 style="margin:0">Risk rank <sup><a href="#n14">[14]</a></sup></h2>
+      <div class="bar">
+        <button class="btn pri" id="bAdd">+ Add line</button>
+        <button class="btn" id="bDup">Duplicate</button>
+        <button class="btn" id="bDel">Delete</button>
+      </div>
+    </div>
+    <div class="tbl-wrap"><table id="rank"><thead><tr>
+      <th class="num">#</th><th>Line</th><th class="num">RL yr</th><th class="num">x Mult</th><th class="num">RL<sub>eff</sub></th><th class="num">LoF</th><th class="num">CoF $</th><th class="num">CoF</th><th class="num">Risk</th>
+    </tr></thead><tbody></tbody></table></div>
+    <p class="small muted" style="margin:8px 0 0">Click a row to edit that line and see its full calculation trace. Sample lines are illustrative, not field data.</p>
+    <div id="delConfirm" class="small" hidden style="margin-top:8px"></div>
+  </section>
+</div>
+
+<section class="panel editor" aria-label="Line inputs">
+  <div class="bar" style="justify-content:space-between;margin-bottom:6px">
+    <h2 style="margin:0">Inputs &mdash; <span id="edName"></span></h2>
+    <span class="small muted">Values recalculate as you type.</span>
+  </div>
+  <div class="fgroups" id="form"></div>
+</section>
+
+<section class="panel trace" aria-label="Calculation trace">
+  <h2>Calculation trace &mdash; <span id="trName"></span></h2>
+  <div class="tbl-wrap"><table id="trace"><thead><tr><th>Step</th><th>Formula / rule</th><th class="num">Value</th><th>Note</th></tr></thead><tbody></tbody></table></div>
+</section>
+
+<section class="panel settings" style="margin-top:16px" aria-label="Model settings">
+  <h2>Model settings (company criteria &mdash; editable)</h2>
+  <div class="cols2" id="settings"></div>
+  <div class="bar" style="margin-top:12px"><button class="btn" id="bReset">Restore default settings</button></div>
+</section>
+
+<section class="panel" style="margin-top:16px" aria-label="Data exchange">
+  <h2>Import / export (CSV)</h2>
+  <p class="small muted" style="margin-top:0">Export copies the fleet as CSV (header row = field keys). Import accepts the same layout pasted below or loaded from a .csv file; missing columns take default values.</p>
+  <div class="bar" style="margin-bottom:8px">
+    <button class="btn" id="bExport">Copy fleet as CSV</button>
+    <button class="btn" id="bImport">Import pasted CSV</button>
+    <label class="btn" for="fileIn">Load .csv file</label>
+    <input type="file" id="fileIn" accept=".csv,text/csv" hidden>
+    <span id="ioMsg" class="small"></span>
+  </div>
+  <textarea id="csv" spellcheck="false" aria-label="CSV text"></textarea>
+</section>
+
+<section class="panel notes" style="margin-top:16px" aria-label="Footnotes">
+  <h2>Footnotes &mdash; calculation, rationale, reference</h2>
+  <ol id="notes"></ol>
+  <p class="small muted" style="max-width:95ch">References are cited to identify the governing concept; confirm edition and clause against your company's controlled copies. Items marked <b>Company criterion</b> are policy choices from this model's basis (your stated rules) or assumptions exposed in Model settings, not code requirements.</p>
+</section>
+</div>
+
+<script>
+(function(){
+"use strict";
+var NOW = new Date().getFullYear();
+
+/* ---------------- field definitions ---------------- */
+var FIELDS = [
+ {g:"Identification", k:"id", l:"Line ID", t:"text", d:"NEW-01"},
+ {g:"Identification", k:"name", l:"Description", t:"text", d:"New line"},
+ {g:"Identification", k:"service", l:"Service", t:"sel", o:["Oil","Multiphase","Gas","Produced water"], d:"Oil"},
+ {g:"Identification", k:"install", l:"In-service year", s:"install or last replacement", t:"num", d:2015},
+ {g:"Design & wall", k:"od", l:"Outside diameter", s:"in", t:"num", d:6.625},
+ {g:"Design & wall", k:"t0", l:"Original (nominal) wall", s:"in", t:"num", d:0.280},
+ {g:"Design & wall", k:"tc", l:"Current min. wall", s:"in, from inspection", t:"num", d:0.250},
+ {g:"Design & wall", k:"maop", l:"MAOP", s:"psig", t:"num", d:1000},
+ {g:"Design & wall", k:"smys", l:"SMYS", s:"psi (Gr B 35000, X52 52000)", t:"num", d:35000},
+ {g:"Design & wall", k:"F", l:"Design factor F", s:"0.72 liquid; 0.4-0.72 gas by class", t:"num", d:0.72},
+ {g:"Design & wall", k:"E", l:"Seam joint factor E", t:"num", d:1.0},
+ {g:"Design & wall", k:"tstruct", l:"Min. structural wall", s:"in, company minimum (0 = none)", t:"num", d:0},
+ {g:"Corrosion & inspection", k:"insp", l:"Inspection data available", s:"ILI / UT / GWUT", t:"yn", d:"Y"},
+ {g:"Corrosion & inspection", k:"inspYear", l:"Last inspection year", t:"num", d:2024},
+ {g:"Corrosion & inspection", k:"lt", l:"Long-term corrosion rate", s:"mpy", t:"num", d:3},
+ {g:"Corrosion & inspection", k:"st", l:"Short-term corrosion rate", s:"mpy", t:"num", d:4},
+ {g:"Corrosion & inspection", k:"wc", l:"Water cut", s:"% (gas: free water %)", t:"num", d:5},
+ {g:"Corrosion & inspection", k:"mech", l:"Governing mechanism", t:"sel", o:["Internal - CO2/MIC","Internal - O2/solids","External corrosion","Unknown"], d:"Internal - CO2/MIC"},
+ {g:"Corrosion & inspection", k:"fails", l:"Leaks in last 5 yr", s:"count (see setting)", t:"num", d:0},
+ {g:"Pigging", k:"piggable", l:"Piggable", t:"yn", d:"Y"},
+ {g:"Pigging", k:"prog", l:"Pigging program in place", t:"yn", d:"Y"},
+ {g:"Pigging", k:"comp", l:"Pigging compliance", s:"% of scheduled runs done", t:"num", d:95},
+ {g:"Consequence", k:"vol", l:"Leak size (release volume)", s:"bbl; 0 for gas", t:"num", d:10},
+ {g:"Consequence", k:"cleanup", l:"Clean-up cost", s:"$ per event", t:"num", d:100000},
+ {g:"Consequence", k:"down", l:"Downtime", s:"days", t:"num", d:3},
+ {g:"Consequence", k:"prod", l:"Production loss", s:"$ per day of outage", t:"num", d:20000},
+ {g:"Consequence", k:"repDays", l:"Estimated repair time", s:"days", t:"num", d:2},
+ {g:"Consequence", k:"repCost", l:"Cost of repair", s:"$", t:"num", d:50000},
+ {g:"Escalation", k:"reg", l:"Regulated (Part 192/195)", t:"yn", d:"N"},
+ {g:"Escalation", k:"esa", l:"Near environmentally sensitive area", t:"yn", d:"N"},
+ {g:"Escalation", k:"hca", l:"Near / could affect HCA", t:"yn", d:"N"},
+ {g:"Escalation", k:"crit", l:"Business critical", t:"yn", d:"N"},
+ {g:"Escalation", k:"cross", l:"Water / road crossing", t:"yn", d:"N"}
+];
+
+/* ---------------- sample fleet (illustrative) ---------------- */
+function L(o){var r={};FIELDS.forEach(function(f){r[f.k]=f.d});for(var k in o)r[k]=o[k];return r}
+var SAMPLE = [
+ L({id:"FL-101",name:"Pad A flowline",service:"Multiphase",install:2012,od:4.5,t0:0.237,tc:0.150,maop:1000,smys:35000,F:0.72,insp:"Y",inspYear:2024,lt:6,st:12,wc:60,piggable:"N",prog:"N",comp:0,vol:20,cleanup:250000,down:5,prod:40000,repDays:4,repCost:60000,esa:"Y"}),
+ L({id:"FL-214",name:"Pad C flowline",service:"Multiphase",install:2020,od:6.625,t0:0.280,tc:0.280,maop:1200,smys:35000,insp:"N",inspYear:0,lt:0,st:0,wc:45,piggable:"N",prog:"N",comp:0,vol:40,cleanup:300000,down:4,prod:35000,repDays:3,repCost:70000,cross:"Y"}),
+ L({id:"FL-330",name:"Pad D flowline",service:"Multiphase",install:2015,od:4.5,t0:0.237,tc:0.205,maop:800,smys:35000,insp:"Y",inspYear:2025,lt:3,st:5,wc:30,piggable:"Y",prog:"Y",comp:25,vol:10,cleanup:150000,down:3,prod:20000,repDays:2,repCost:40000,cross:"Y"}),
+ L({id:"TL-01",name:"Trunkline to stabilizer",service:"Oil",install:1998,od:12.75,t0:0.375,tc:0.290,maop:740,smys:52000,insp:"Y",inspYear:2023,lt:3,st:4.5,wc:1.5,piggable:"Y",prog:"Y",comp:95,vol:500,cleanup:3500000,down:7,prod:400000,repDays:5,repCost:250000,reg:"Y",esa:"Y",crit:"Y",cross:"Y"}),
+ L({id:"TL-03",name:"Trunkline B",service:"Oil",install:2004,od:8.625,t0:0.322,tc:0.200,maop:900,smys:42000,insp:"Y",inspYear:2022,lt:4,st:9,wc:8,piggable:"Y",prog:"Y",comp:72,vol:150,cleanup:1200000,down:4,prod:150000,repDays:3,repCost:120000,reg:"Y",hca:"Y"}),
+ L({id:"GL-HP-02",name:"HP gas-lift header",service:"Gas",install:2010,od:6.625,t0:0.432,tc:0.390,maop:1440,smys:42000,F:0.6,insp:"Y",inspYear:2024,lt:1.5,st:2,wc:0,mech:"Internal - O2/solids",piggable:"Y",prog:"Y",comp:55,vol:0,cleanup:20000,down:3,prod:250000,repDays:2,repCost:80000,crit:"Y"}),
+ L({id:"SG-01",name:"Sales gas line",service:"Gas",install:2008,od:10.75,t0:0.365,tc:0.330,maop:1000,smys:52000,F:0.5,insp:"Y",inspYear:2025,lt:1,st:1.2,wc:0,mech:"External corrosion",piggable:"Y",prog:"Y",comp:92,vol:0,cleanup:50000,down:5,prod:600000,repDays:4,repCost:300000,reg:"Y",hca:"Y",crit:"Y"}),
+ L({id:"LPG-07",name:"LP gas gathering",service:"Gas",install:2014,od:4.5,t0:0.237,tc:0.237,maop:150,smys:35000,insp:"N",inspYear:0,lt:0,st:0,wc:5,piggable:"N",prog:"N",comp:0,vol:0,cleanup:10000,down:2,prod:5000,repDays:2,repCost:25000})
+];
+
+/* ---------------- settings ---------------- */
+var DEF = {
+ crSel:"max", rlCap:50, wlLimit:80,
+ wcRefWC:2, wcRefLife:15, wcLife100:5, lifeFloor:1,
+ compHi:90, compMid:60, compLo:30, mHi:1.10, mMid:1.25, mLo:1.50,
+ mNoProg:2, mSub:2, subWC:25, failPct:0,
+ lofB1:20, lofB2:10, lofB3:5, lofB4:2,
+ finB1:100000, finB2:1000000, finB3:5000000, finB4:20000000,
+ volB1:5, volB2:50, volB3:500, volB4:5000,
+ eReg:1, eEsa:1, eHca:1, eCrit:1, eCross:1,
+ fReg:0, fEsa:0, fHca:0, fCrit:0, fCross:0,
+ rMed:5, rHigh:10, rVH:15
+};
+var SET_UI = [
+ {h:"Remaining life", items:[
+  ["crSel","Governing corrosion rate","sel",["max","lt","st"]],
+  ["rlCap","Remaining-life cap (yr)"],["wlLimit","Max. wall loss allowed (% of t0)"]]},
+ {h:"No-inspection water-cut life", items:[
+  ["wcRefWC","Reference water cut (%)"],["wcRefLife","Life at reference WC (yr)"],["wcLife100","Life at 100% WC (yr)"],["lifeFloor","Minimum base life (yr)"]]},
+ {h:"Pigging / likelihood multipliers", items:[
+  ["compHi","Compliance target (%)"],["compMid","Compliance tier 2 below (%)"],["compLo","Compliance tier 3 below (%)"],
+  ["mHi","x below target"],["mMid","x below tier 2"],["mLo","x below tier 3"],["mNoProg","x no pigging program"],
+  ["mSub","x subcategory (unpiggable, no data, high WC)"],["subWC","Subcategory water cut above (%)"],["failPct","+% per leak in last 5 yr"]]},
+ {h:"LoF bands (RL_eff, yr)", items:[
+  ["lofB1","LoF 1 if RL_eff >="],["lofB2","LoF 2 if RL_eff >="],["lofB3","LoF 3 if RL_eff >="],["lofB4","LoF 4 if RL_eff >= (else 5)"]]},
+ {h:"CoF financial bands ($)", items:[
+  ["finB1","CoF 2 from"],["finB2","CoF 3 from"],["finB3","CoF 4 from"],["finB4","CoF 5 from"]]},
+ {h:"CoF volume bands (bbl)", items:[
+  ["volB1","CoF 2 from"],["volB2","CoF 3 from"],["volB3","CoF 4 from"],["volB4","CoF 5 from"]]},
+ {h:"Escalation: added categories", items:[
+  ["eReg","Regulated +"],["eEsa","Near ESA +"],["eHca","Near HCA +"],["eCrit","Business critical +"],["eCross","Crossing +"]]},
+ {h:"Escalation: minimum CoF (0 = none)", items:[
+  ["fReg","Regulated floor"],["fEsa","Near ESA floor"],["fHca","Near HCA floor"],["fCrit","Business critical floor"],["fCross","Crossing floor"]]},
+ {h:"Risk bands (score)", items:[
+  ["rMed","Medium from"],["rHigh","High from"],["rVH","Very high from"]]}
+];
+
+var S = clone(DEF), fleet = SAMPLE.map(clone), sel = 0;
+try{ var s1=localStorage.getItem("frr_settings"); if(s1) S=Object.assign(clone(DEF),JSON.parse(s1));
+     var f1=localStorage.getItem("frr_fleet"); if(f1){var fx=JSON.parse(f1); if(fx&&fx.length) fleet=fx;} }catch(e){}
+function save(){try{localStorage.setItem("frr_settings",JSON.stringify(S));localStorage.setItem("frr_fleet",JSON.stringify(fleet))}catch(e){}}
+function clone(o){return JSON.parse(JSON.stringify(o))}
+function n(v){v=parseFloat(v);return isFinite(v)?v:0}
+function yes(v){return String(v).toUpperCase()==="Y"}
+function money(v){if(v>=1e6)return "$"+(v/1e6).toFixed(2)+"M";if(v>=1e3)return "$"+(v/1e3).toFixed(0)+"k";return "$"+v.toFixed(0)}
+function f(v,d){return (isFinite(v)?v:0).toFixed(d==null?2:d)}
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})}
+
+/* ---------------- engine ---------------- */
+function calc(p){
+ var r={steps:[]}, st=r.steps;
+ function H(t){st.push({hd:t})}
+ function R(step,fx,val,note,fn,res){st.push({step:step,fx:fx,val:val,note:note||"",fn:fn,res:res})}
+ var od=n(p.od),t0=n(p.t0),tc=n(p.tc),P=n(p.maop),Sy=n(p.smys),F=n(p.F)||0.72,E=n(p.E)||1;
+ var age=Math.max(0,NOW-n(p.install)), wc=Math.max(0,n(p.wc));
+
+ H("1. Minimum required wall");
+ var tP = (Sy>0&&F>0&&E>0)? P*od/(2*Sy*F*E) : 0;
+ R("t_pressure (Barlow)","P*D / (2*S*F*E) = "+P+" x "+od+" / (2 x "+Sy+" x "+F+" x "+E+")",f(tP,4)+" in","",1);
+ var tWL = t0*(1-S.wlLimit/100);
+ R("t_wall-loss limit","t0 x (1 - "+S.wlLimit+"%)",f(tWL,4)+" in","Deepest allowed metal loss",2);
+ var tS=n(p.tstruct);
+ if(tS>0) R("t_structural","Company minimum",f(tS,4)+" in","");
+ var tmin=Math.max(tP,tWL,tS);
+ R("t_min (governing)","max(t_pressure, t_wall-loss, t_structural)",f(tmin,4)+" in","",null,true);
+ if(p.service==="Gas"&&P>0){var pir=0.69*Math.sqrt(P*od*od);R("Potential impact radius (info)","0.69 x sqrt(P x d^2)",f(pir,0)+" ft","Use to confirm the HCA flag",15)}
+
+ var RL, path;
+ if(yes(p.insp)){
+  path="A";
+  H("2A. Remaining life from inspection data");
+  var lt=n(p.lt), stc=n(p.st);
+  var ltCheck = age>0 ? (t0-tc)*1000/age : 0;
+  R("LTCR (input)","(t0 - t_actual)/years, check = ("+t0+" - "+tc+") x 1000 / "+age,f(lt,2)+" mpy","Check value "+f(ltCheck,2)+" mpy"+(Math.abs(ltCheck-lt)>Math.max(1,0.5*lt)&&age>0?" - differs from input, verify":""),3);
+  R("STCR (input)","(t_previous - t_actual)/years between inspections",f(stc,2)+" mpy","",3);
+  var cr = S.crSel==="lt"?lt:(S.crSel==="st"?stc:Math.max(lt,stc));
+  R("CR_gov","rule: "+(S.crSel==="max"?"max(LTCR, STCR)":S.crSel.toUpperCase()+"CR"),f(cr,2)+" mpy","",3);
+  var avail=tc-tmin;
+  R("Corrosion allowance left","t_actual - t_min = "+tc+" - "+f(tmin,4),f(avail,4)+" in",avail<=0?"At or below t_min":"",4);
+  if(avail<=0) RL=0; else if(cr<=0) RL=S.rlCap; else RL=Math.min(S.rlCap,avail*1000/cr);
+  R("RL (remaining life)","(t_actual - t_min) x 1000 / CR_gov, cap "+S.rlCap+" yr",f(RL,1)+" yr","",4,true);
+ } else {
+  path="B";
+  H("2B. Base life from water cut (no inspection data)");
+  var span=100-S.wcRefWC, wcc=Math.min(100,Math.max(S.wcRefWC,wc));
+  var Lwc = S.wcRefLife - (wcc-S.wcRefWC)*(S.wcRefLife-S.wcLife100)/span;
+  Lwc=Math.max(S.lifeFloor,Lwc);
+  R("Base life L(WC)",S.wcRefLife+" - (WC - "+S.wcRefWC+") x ("+S.wcRefLife+" - "+S.wcLife100+")/"+span+", WC="+f(wc,1)+"%",f(Lwc,1)+" yr","Linear between anchor points",5);
+  var crEq = Lwc>0?(t0-tmin)*1000/Lwc:0;
+  R("Equivalent CR (info)","(t0 - t_min) x 1000 / L(WC)",f(crEq,2)+" mpy","Rate that consumes the allowance in L(WC)",5);
+  R("Years in service","current year - in-service year = "+NOW+" - "+n(p.install),f(age,0)+" yr","",5);
+  RL=Math.max(0,Math.min(S.rlCap,Lwc-age));
+  R("RL (remaining life)","max(0, L(WC) - years in service)",f(RL,1)+" yr","",5,true);
+ }
+
+ H("3. Likelihood adjustments");
+ var m=1, mPig=1, mNote;
+ if(!yes(p.prog)){ mPig=S.mNoProg; mNote="No pigging program"; }
+ else { var c=n(p.comp);
+   if(c>=S.compHi){mPig=1;mNote="Compliance "+c+"% >= "+S.compHi+"%: unchanged"}
+   else if(c>=S.compMid){mPig=S.mHi;mNote="Compliance "+c+"% < "+S.compHi+"%"}
+   else if(c>=S.compLo){mPig=S.mMid;mNote="Compliance "+c+"% < "+S.compMid+"%"}
+   else {mPig=S.mLo;mNote="Compliance "+c+"% < "+S.compLo+"%"}
+ }
+ R("M_pig","pigging program / compliance rule","x "+f(mPig,2),mNote,6);
+ var sub = !yes(p.piggable)&&!yes(p.insp)&&wc>S.subWC, mSub=sub?S.mSub:1;
+ R("M_sub","unpiggable AND no inspection AND WC > "+S.subWC+"%","x "+f(mSub,2),sub?"Subcategory applies":"Not applicable",7);
+ var mF = 1+S.failPct/100*n(p.fails);
+ if(S.failPct>0||n(p.fails)>0) R("M_hist","1 + "+S.failPct+"% x leaks(5 yr) = 1 + "+S.failPct+"% x "+n(p.fails),"x "+f(mF,2),S.failPct>0?"":"Setting is 0%, so no effect",8);
+ m=mPig*mSub*mF;
+ R("M_total","M_pig x M_sub x M_hist","x "+f(m,2),"",9,true);
+ var RLe = RL/m;
+ R("RL_eff","RL / M_total = "+f(RL,1)+" / "+f(m,2),f(RLe,2)+" yr","Equivalent to raising likelihood (1/RL) by M_total",9,true);
+ var B=[S.lofB1,S.lofB2,S.lofB3,S.lofB4], lof = RLe>=B[0]?1:RLe>=B[1]?2:RLe>=B[2]?3:RLe>=B[3]?4:5;
+ R("LoF category","bands on RL_eff: >="+B[0]+" | "+B[1]+" | "+B[2]+" | "+B[3]+" yr",String(lof),"",9,true);
+
+ H("4. Consequence of failure");
+ var outage=Math.max(n(p.down),n(p.repDays));
+ R("Outage duration","max(downtime, repair time) = max("+n(p.down)+", "+n(p.repDays)+")",f(outage,1)+" d","",10);
+ var prodL=n(p.prod)*outage;
+ R("Production loss $","$/day x outage = "+money(n(p.prod))+" x "+f(outage,1),money(prodL),"",10);
+ var cof$=n(p.cleanup)+n(p.repCost)+prodL;
+ R("CoF $","clean-up + repair + production loss",money(cof$),money(n(p.cleanup))+" + "+money(n(p.repCost))+" + "+money(prodL),10,true);
+ var FB=[S.finB1,S.finB2,S.finB3,S.finB4], cFin = cof$>=FB[3]?5:cof$>=FB[2]?4:cof$>=FB[1]?3:cof$>=FB[0]?2:1;
+ R("Financial category","bands "+FB.map(money).join(" | "),String(cFin),"",10);
+ var VB=[S.volB1,S.volB2,S.volB3,S.volB4], v=n(p.vol), cVol = v>=VB[3]?5:v>=VB[2]?4:v>=VB[1]?3:v>=VB[0]?2:1;
+ R("Leak-size category","bands "+VB.join(" | ")+" bbl, leak = "+v+" bbl",String(cVol),"",11);
+ var base=Math.max(cFin,cVol);
+ R("Base CoF","max(financial, leak size)",String(base),cVol>cFin?"Leak size governs":"Cost governs",11,true);
+
+ H("5. Consequence escalation");
+ var inc=0, floor=0, fl=[];
+ [["reg","Regulated","eReg","fReg"],["esa","Near ESA","eEsa","fEsa"],["hca","Near HCA","eHca","fHca"],["crit","Business critical","eCrit","fCrit"],["cross","Crossing","eCross","fCross"]].forEach(function(a){
+   if(yes(p[a[0]])){inc+=n(S[a[2]]);floor=Math.max(floor,n(S[a[3]]));fl.push(a[1])}
+ });
+ R("Flags","regulated / ESA / HCA / critical / crossing",String(fl.length),fl.join(", ")||"None",12);
+ var cof=Math.min(5,Math.max(base+inc,floor,1));
+ R("CoF category","min(5, max(base + increments, floor)) = min(5, max("+base+" + "+inc+", "+floor+"))",String(cof),"",12,true);
+
+ H("6. Risk");
+ var score=lof*cof;
+ var band = score>=S.rVH?"vhigh":score>=S.rHigh?"high":score>=S.rMed?"med":"low";
+ R("Risk score","LoF x CoF = "+lof+" x "+cof,String(score),bandName(band),13,true);
+
+ // continuous plot positions (0..5)
+ function fracLog(x,lo,hi){ if(!(x>0))return 0.15; lo=Math.max(lo,1e-9); var t=(Math.log(x)-Math.log(lo))/(Math.log(hi)-Math.log(lo)); return Math.min(0.88,Math.max(0.12,t)); }
+ var ly; // LoF: shorter RL -> higher in cell
+ var edges=[Infinity,B[0],B[1],B[2],B[3],0];
+ var hiE = lof===1? B[0]*3 : edges[lof-1], loE = lof===5? Math.max(0.05,B[3]/10) : edges[lof];
+ ly = (lof-1) + (1-fracLog(Math.max(RLe,0.05),loE,hiE));
+ var cx, useV = cVol>cFin, bb = useV?VB:FB, val=useV?v:cof$;
+ var cat=base, lo2 = cat===1? bb[0]/10 : bb[cat-2], hi2 = cat===5? bb[3]*5 : bb[cat-1];
+ cx = (cof-1) + fracLog(val,lo2,hi2);
+ r.path=path; r.tmin=tmin; r.RL=RL; r.m=m; r.RLe=RLe; r.lof=lof; r.cof$=cof$; r.cof=cof; r.base=base; r.score=score; r.band=band; r.x=cx; r.y=ly; r.cont=(ly+0.5)*(cx+0.5);
+ r.flags=fl;
+ return r;
+}
+function bandName(b){return {low:"Low",med:"Medium",high:"High",vhigh:"Very high"}[b]}
+
+/* ---------------- plot ---------------- */
+function drawPlot(res){
+ var W=620,Hh=470,ml=104,mr=14,mt=14,mb=74,cw=(W-ml-mr)/5,ch=(Hh-mt-mb)/5;
+ var o=['<svg viewBox="0 0 '+W+' '+Hh+'" width="100%" role="img" aria-label="5 by 5 risk matrix with each pipeline plotted">'];
+ for(var i=1;i<=5;i++)for(var j=1;j<=5;j++){
+   var sc=i*j, b=sc>=S.rVH?"vhigh":sc>=S.rHigh?"high":sc>=S.rMed?"med":"low";
+   var x=ml+(j-1)*cw, y=mt+(5-i)*ch;
+   o.push('<rect x="'+x+'" y="'+y+'" width="'+cw+'" height="'+ch+'" fill="var(--'+b+'-bg)" stroke="#FFFFFF" stroke-width="2"/>');
+   o.push('<text x="'+(x+cw-6)+'" y="'+(y+14)+'" text-anchor="end" font-size="10" fill="#8A9692">'+sc+'</text>');
+ }
+ var lofL=["Very low","Low","Medium","High","Very high"];
+ var B=[S.lofB1,S.lofB2,S.lofB3,S.lofB4];
+ var lofR=[">= "+B[0]+" yr",B[1]+"-"+B[0],B[2]+"-"+B[1],B[3]+"-"+B[2],"< "+B[3]+" yr"];
+ for(i=1;i<=5;i++){var yy=mt+(5-i)*ch+ch/2;
+   o.push('<text x="'+(ml-8)+'" y="'+(yy-3)+'" text-anchor="end" font-size="11.5" font-weight="600" fill="#18201E">'+i+' '+lofL[i-1]+'</text>');
+   o.push('<text x="'+(ml-8)+'" y="'+(yy+11)+'" text-anchor="end" font-size="10" fill="#76837F">'+lofR[i-1]+'</text>');}
+ var FB=[S.finB1,S.finB2,S.finB3,S.finB4];
+ var cofR=["< "+money(FB[0]),money(FB[0])+"-"+money(FB[1]),money(FB[1])+"-"+money(FB[2]),money(FB[2])+"-"+money(FB[3]),">= "+money(FB[3])];
+ for(j=1;j<=5;j++){var xx=ml+(j-1)*cw+cw/2;
+   o.push('<text x="'+xx+'" y="'+(Hh-mb+17)+'" text-anchor="middle" font-size="11.5" font-weight="600" fill="#18201E">'+j+' '+lofL[j-1]+'</text>');
+   o.push('<text x="'+xx+'" y="'+(Hh-mb+31)+'" text-anchor="middle" font-size="10" fill="#76837F">'+cofR[j-1]+'</text>');}
+ o.push('<text x="'+(ml+(W-ml-mr)/2)+'" y="'+(Hh-14)+'" text-anchor="middle" font-size="11" letter-spacing=".08em" fill="#4A5754">CONSEQUENCE OF FAILURE (after escalation) &#8594;</text>');
+ o.push('<text transform="translate(14,'+(mt+(Hh-mt-mb)/2)+') rotate(-90)" text-anchor="middle" font-size="11" letter-spacing=".08em" fill="#4A5754">LIKELIHOOD OF FAILURE &#8594;</text>');
+ // points
+ var pts=res.map(function(r,k){return {k:k,r:r,x:ml+r.x*cw,y:mt+(5-r.y)*ch}});
+ pts.sort(function(a,b){return (a.k===sel)-(b.k===sel)});
+ pts.forEach(function(p){
+   var isS=p.k===sel, col={low:"#3F7A4A",med:"#9A7A16",high:"#B45F1E",vhigh:"#A42C27"}[p.r.band];
+   var lbl=esc(fleet[p.k].id);
+   o.push('<g data-k="'+p.k+'" style="cursor:pointer"><title>'+lbl+' | LoF '+p.r.lof+' x CoF '+p.r.cof+' = '+p.r.score+' | RL_eff '+f(p.r.RLe,1)+' yr | '+money(p.r.cof$)+'</title>');
+   if(isS) o.push('<circle cx="'+p.x+'" cy="'+p.y+'" r="11" fill="none" stroke="#2F5D6E" stroke-width="2"/>');
+   o.push('<circle cx="'+p.x+'" cy="'+p.y+'" r="6" fill="'+col+'" stroke="#FFFFFF" stroke-width="1.5"/>');
+   var right = p.x < ml+4*cw;
+   o.push('<text x="'+(p.x+(right?10:-10))+'" y="'+(p.y+4)+'" text-anchor="'+(right?"start":"end")+'" font-size="11" font-weight="'+(isS?700:500)+'" fill="#18201E" paint-order="stroke" stroke="#FFFFFF" stroke-width="3">'+lbl+'</text></g>');
+ });
+ o.push('</svg>');
+ var el=document.getElementById("plot"); el.innerHTML=o.join("");
+ el.querySelectorAll("g[data-k]").forEach(function(g){g.addEventListener("click",function(){select(+g.getAttribute("data-k"))})});
+}
+
+/* ---------------- render ---------------- */
+var res=[];
+function run(){
+ res=fleet.map(calc);
+ drawPlot(res);
+ // chips
+ var cnt={low:0,med:0,high:0,vhigh:0}; res.forEach(function(r){cnt[r.band]++});
+ document.getElementById("chips").innerHTML=["vhigh","high","med","low"].map(function(b){
+   return '<span class="chip"><span class="dot" style="background:var(--'+b+')"></span>'+bandName(b)+' <b>'+cnt[b]+'</b></span>'}).join("");
+ // rank table
+ var idx=res.map(function(r,k){return k}).sort(function(a,b){return res[b].score-res[a].score||res[b].cont-res[a].cont});
+ var tb=document.querySelector("#rank tbody");
+ tb.innerHTML=idx.map(function(k,i){var r=res[k],p=fleet[k];
+   return '<tr data-k="'+k+'" class="'+(k===sel?"sel":"")+'"><td class="num">'+(i+1)+'</td><td><b>'+esc(p.id)+'</b> <div class="muted small">'+esc(p.name)+' &middot; '+esc(p.service)+(r.path==="B"?' &middot; no insp. data':'')+'</div></td><td class="num">'+f(r.RL,1)+'</td><td class="num">'+f(r.m,2)+'</td><td class="num">'+f(r.RLe,1)+'</td><td class="num"><span class="pill b-'+lofBand(r.lof)+'">'+r.lof+'</span></td><td class="num">'+money(r.cof$)+'</td><td class="num"><span class="pill b-'+lofBand(r.cof)+'">'+r.cof+'</span></td><td class="num"><span class="pill b-'+r.band+'">'+r.score+'</span></td></tr>'}).join("");
+ tb.querySelectorAll("tr").forEach(function(tr){tr.addEventListener("click",function(){select(+tr.getAttribute("data-k"))})});
+ drawTrace();
+ save();
+}
+function lofBand(c){return c>=5?"vhigh":c>=4?"high":c>=3?"med":"low"}
+function drawTrace(){
+ var r=res[sel]; if(!r)return;
+ document.getElementById("trName").textContent=fleet[sel].id+" "+fleet[sel].name;
+ document.querySelector("#trace tbody").innerHTML=r.steps.map(function(s){
+  if(s.hd) return '<tr class="hd"><td colspan="4">'+esc(s.hd)+'</td></tr>';
+  return '<tr class="'+(s.res?"res":"")+'"><td>'+esc(s.step)+(s.fn?' <sup><a href="#n'+s.fn+'">['+s.fn+']</a></sup>':'')+'</td><td class="fx">'+esc(s.fx)+'</td><td class="v num">'+esc(s.val)+'</td><td class="small">'+esc(s.note)+'</td></tr>'}).join("");
+}
+function buildForm(){
+ var p=fleet[sel]; document.getElementById("edName").textContent=p.id+" "+p.name;
+ var groups={}; FIELDS.forEach(function(fd){(groups[fd.g]=groups[fd.g]||[]).push(fd)});
+ var h=[];
+ for(var g in groups){
+  h.push('<fieldset><legend>'+g+'</legend>');
+  groups[g].forEach(function(fd){
+   var id="in_"+fd.k, v=p[fd.k]==null?fd.d:p[fd.k], ctl;
+   if(fd.t==="sel"||fd.t==="yn"){var opts=fd.t==="yn"?["Y","N"]:fd.o;
+     ctl='<select id="'+id+'" data-k="'+fd.k+'">'+opts.map(function(o){return '<option'+(String(v)===o?' selected':'')+'>'+o+'</option>'}).join("")+'</select>';}
+   else ctl='<input id="'+id+'" data-k="'+fd.k+'" type="'+(fd.t==="num"?"number":"text")+'" step="any" value="'+esc(v)+'">';
+   h.push('<div class="f"><label for="'+id+'">'+fd.l+(fd.s?'<small>'+fd.s+'</small>':'')+'</label>'+ctl+'</div>');
+  });
+  h.push('</fieldset>');
+ }
+ var el=document.getElementById("form"); el.innerHTML=h.join("");
+ el.querySelectorAll("[data-k]").forEach(function(c){c.addEventListener("input",function(){
+   var k=c.getAttribute("data-k"), fd=FIELDS.filter(function(x){return x.k===k})[0];
+   fleet[sel][k]= fd.t==="num"? (c.value===""?0:parseFloat(c.value)) : c.value;
+   if(k==="id"||k==="name") document.getElementById("edName").textContent=fleet[sel].id+" "+fleet[sel].name;
+   run();
+ })});
+}
+function buildSettings(){
+ var h=SET_UI.map(function(g){
+  return '<fieldset><legend>'+g.h+'</legend>'+g.items.map(function(it){var id="s_"+it[0],v=S[it[0]];
+   var ctl= it[2]==="sel" ? '<select id="'+id+'" data-s="'+it[0]+'">'+it[3].map(function(o){return '<option'+(v===o?' selected':'')+'>'+o+'</option>'}).join("")+'</select>'
+     : '<input id="'+id+'" data-s="'+it[0]+'" type="number" step="any" value="'+v+'">';
+   return '<div class="f"><label for="'+id+'">'+it[1]+'</label>'+ctl+'</div>'}).join("")+'</fieldset>'}).join("");
+ var el=document.getElementById("settings"); el.innerHTML=h;
+ el.querySelectorAll("[data-s]").forEach(function(c){c.addEventListener("input",function(){
+   var k=c.getAttribute("data-s"); S[k]= c.tagName==="SELECT"?c.value:n(c.value); run(); drawNotes();})});
+}
+function select(k){sel=k;buildForm();run();}
+
+/* ---------------- buttons ---------------- */
+document.getElementById("bAdd").onclick=function(){var p=L({id:"NEW-"+(fleet.length+1)});fleet.push(p);select(fleet.length-1)};
+document.getElementById("bDup").onclick=function(){var p=clone(fleet[sel]);p.id+="-copy";fleet.push(p);select(fleet.length-1)};
+document.getElementById("bDel").onclick=function(){
+ var box=document.getElementById("delConfirm"); if(fleet.length<=1){box.hidden=false;box.textContent="Keep at least one line.";return}
+ box.hidden=false; box.innerHTML='Delete <b>'+esc(fleet[sel].id)+'</b>? <button class="btn" id="dY">Delete</button> <button class="btn" id="dN">Cancel</button>';
+ document.getElementById("dY").onclick=function(){fleet.splice(sel,1);sel=0;box.hidden=true;select(0)};
+ document.getElementById("dN").onclick=function(){box.hidden=true};
+};
+document.getElementById("bReset").onclick=function(){S=clone(DEF);buildSettings();run();drawNotes()};
+var keys=FIELDS.map(function(x){return x.k});
+function toCSV(){return [keys.join(",")].concat(fleet.map(function(p){return keys.map(function(k){var v=p[k]==null?"":String(p[k]);return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v}).join(",")})).join("\n")}
+function parseCSV(t){var rows=[],row=[],cur="",q=false;for(var i=0;i<t.length;i++){var c=t[i];
+ if(q){if(c==='"'){if(t[i+1]==='"'){cur+='"';i++}else q=false}else cur+=c}
+ else if(c==='"')q=true; else if(c===','){row.push(cur);cur=""} else if(c==='\n'||c==='\r'){if(c==='\r'&&t[i+1]==='\n')i++;row.push(cur);cur="";if(row.join("").trim())rows.push(row);row=[]} else cur+=c}
+ row.push(cur); if(row.join("").trim())rows.push(row); return rows}
+function importText(t){var msg=document.getElementById("ioMsg");
+ var rows=parseCSV(t); if(rows.length<2){msg.textContent="No data rows found. First row must be the header.";return}
+ var hdr=rows[0].map(function(h){return h.trim()}); var bad=hdr.filter(function(h){return keys.indexOf(h)<0});
+ var out=rows.slice(1).map(function(r){var o={};hdr.forEach(function(h,i){if(keys.indexOf(h)<0)return;var fd=FIELDS.filter(function(x){return x.k===h})[0];o[h]=fd.t==="num"?n(r[i]):(fd.t==="yn"?(yes(r[i])?"Y":"N"):(r[i]||"").trim())});return L(o)});
+ fleet=out; sel=0; select(0); msg.textContent="Imported "+out.length+" lines."+(bad.length?" Ignored columns: "+bad.join(", "):"");}
+document.getElementById("bExport").onclick=function(){var t=toCSV(),ta=document.getElementById("csv"),msg=document.getElementById("ioMsg");ta.value=t;
+ try{navigator.clipboard.writeText(t).then(function(){msg.textContent="Copied "+fleet.length+" lines to clipboard."},function(){ta.select();msg.textContent="Clipboard blocked - text selected below, copy manually."})}catch(e){ta.select();msg.textContent="Text selected below, copy manually."}};
+document.getElementById("bImport").onclick=function(){importText(document.getElementById("csv").value)};
+document.getElementById("fileIn").onchange=function(e){var fl=e.target.files[0];if(!fl)return;var rd=new FileReader();rd.onload=function(){document.getElementById("csv").value=rd.result;importText(rd.result)};rd.readAsText(fl)};
+
+/* ---------------- footnotes ---------------- */
+function drawNotes(){
+ var N=[
+ ["Minimum required wall - pressure design (Barlow)",
+  "t_pressure = P x D / (2 x S x F x E)   [T = 1.0 assumed, temperature < 250 F]",
+  "The wall the pipe needs to hold MAOP at the design stress. Corrosion allowance is only the wall above this value, so remaining life is measured to it, not to zero. F comes from service and location class (0.72 liquid; 0.72/0.60/0.50/0.40 gas Class 1-4).",
+  "49 CFR 192.105 (gas design formula); 49 CFR 195.106 (liquid internal design pressure); ASME B31.4 para 403.2.1; ASME B31.8 para 841.1.1."],
+ ["Wall-loss limit ("+S.wlLimit+"% of nominal)",
+  "t_wall-loss = t0 x (1 - "+S.wlLimit+"/100);   t_min = max(t_pressure, t_wall-loss, t_structural)",
+  "On thin-wall, low-stress lines the Barlow wall can be very small and would allow near through-wall pitting. Deep metal loss of more than 80% of wall is outside the validity of the B31G / RSTRENG method and is an immediate repair condition for hazardous liquid lines, so it is used as a second floor. t_structural lets you add a company minimum for handling or external loads.",
+  "ASME B31G-2012 section 1 (scope: depth limited to 80% of wall); 49 CFR 195.452(h) immediate repair conditions (metal loss > 80% of nominal wall); API 579-1/ASME FFS-1 Part 4/5 (t_min and minimum measured thickness)."],
+ ["Long- and short-term corrosion rates",
+  "LTCR = (t_initial - t_actual) / years between;   STCR = (t_previous - t_actual) / years between;   CR_gov = "+(S.crSel==="max"?"max(LTCR, STCR)":S.crSel.toUpperCase()+"CR"),
+  "LTCR averages the full service life; STCR reflects current operating conditions (for example rising water cut). The code asks the inspector to select the rate that best reflects current conditions; this model defaults to the larger of the two, which is conservative when water cut or bacteria counts are trending up. A check LTCR is computed from t0, t_actual and years in service and flagged if it disagrees strongly with the input.",
+  "API 570 section 7.1.1 (corrosion rate determination); API 510 section 7.1.1 (same method for vessels); NACE SP0775 (coupon rates, when used as a cross-check)."],
+ ["Remaining life (lines with inspection data)",
+  "RL = (t_actual - t_min) x 1000 / CR_gov   [in, mpy -> years], capped at "+S.rlCap+" yr",
+  "Years until the thinnest measured point reaches t_min at the governing rate. The cap keeps very low-rate lines from dominating the log scale; they all fall in LoF 1 anyway. RL = 0 when t_actual is already at or below t_min.",
+  "API 570 section 7.1.1 (remaining life = (t_actual - t_required)/corrosion rate); API 579-1/ASME FFS-1 Part 4 section 4.5 (remaining life)."],
+ ["Base life from water cut (no inspection data)",
+  "L(WC) = "+S.wcRefLife+" - (WC - "+S.wcRefWC+") x ("+S.wcRefLife+" - "+S.wcLife100+") / (100 - "+S.wcRefWC+"), floor "+S.lifeFloor+" yr;   RL = max(0, L(WC) - years in service)",
+  "Company criterion. Your basis: a line at "+S.wcRefWC+"% water cut is essentially dry oil and can last up to "+S.wcRefLife+" years. With no measured wall, life is estimated from how much free water can wet the pipe. The second anchor (100% water cut -> "+S.wcLife100+" yr) is an assumption set so that a ~50% water-cut flowline lasts about 10 years, which matches the representative flowline experience; calibrate it to your own leak history. Linear interpolation keeps it transparent. An equivalent corrosion rate is shown so the no-data path can be compared with inspected lines. Years in service counts from install or last replacement; once L(WC) is used up the line sits in LoF 5 until it is inspected.",
+  "Water wetting and oil-wet protection of steel at low water cut: de Waard and Lotz water-wetting factor used in CO2 corrosion practice; NORSOK M-506 (CO2 corrosion rate model - intended for water-wetted steel); NACE SP0208 (liquid petroleum ICDA - water accumulation at low points); API RP 1160 (use of surrogate data where inspection is absent)."],
+ ["Pigging program and compliance multiplier",
+  "Program in place: compliance >= "+S.compHi+"% -> x1.00;  < "+S.compHi+"% -> x"+S.mHi+";  < "+S.compMid+"% -> x"+S.mMid+";  < "+S.compLo+"% -> x"+S.mLo+".   No program -> x"+S.mNoProg,
+  "Company criterion (your rule). Maintenance pigging removes settled water, solids and biofilm that drive under-deposit and MIC attack; missed runs extend water dwell time, so likelihood rises as compliance falls. Only the most severe tier applies (tiers do not stack). Applied as a multiplier on likelihood, which is the same as dividing remaining life (see note 9). 'No pigging program' applies to any line without a program, including unpiggable lines.",
+  "NACE SP0106 (control of internal corrosion in steel pipelines - cleaning pigs as a mitigation); NACE SP0208 / SP0110 (ICDA); API RP 1160 section on preventive and mitigative measures; ASME B31.8S section 7 (mitigation effect on threat)."],
+ ["Subcategory: unpiggable, no inspection data, water cut > "+S.subWC+"%",
+  "M_sub = "+S.mSub+" if (piggable = N) AND (inspection data = N) AND (WC > "+S.subWC+"%), else 1",
+  "Company criterion (your rule). This group has no mitigation, no measured condition and enough water to break the oil-wet film. As specified it multiplies on top of the no-program factor (these lines have no program), so the combined factor is "+S.mNoProg+" x "+S.mSub+" = "+(S.mNoProg*S.mSub)+". If you intended the two doublings to be the same doubling, set 'x subcategory' to 1 in Model settings.",
+  "Basis as note 5 (water wetting above ~25-30% water cut); API RP 1160 (data gaps treated conservatively)."],
+ ["Failure history (optional)",
+  "M_hist = 1 + ("+S.failPct+"% x leaks in last 5 yr)",
+  "Added input. A line that has already leaked is direct evidence the mechanism is active. Default setting is 0% so it does not change your model until you choose a value.",
+  "ASME B31.8S section 5 (leak history as a likelihood factor); API RP 1160 (incident history in risk)."],
+ ["Effective remaining life and LoF category",
+  "M_total = M_pig x M_sub x M_hist;   RL_eff = RL / M_total;   LoF = 1 if RL_eff >= "+S.lofB1+", 2 if >= "+S.lofB2+", 3 if >= "+S.lofB3+", 4 if >= "+S.lofB4+", else 5",
+  "Likelihood is treated as proportional to 1/RL (the share of remaining allowance consumed per year). Raising likelihood by 10% is therefore the same as dividing RL by 1.10, which keeps every adjustment in the unit engineers already use (years). Band edges are company criteria and editable; they are chosen so that LoF 5 (< "+S.lofB4+" yr) sits inside a typical re-inspection interval.",
+  "API RP 580 (risk-based inspection, likelihood categories); API RP 581 Part 1 (5 x 5 risk matrix); API 570 section 6 (inspection interval set as a fraction of remaining life)."],
+ ["Financial consequence",
+  "Outage = max(downtime, repair time);   CoF $ = clean-up + repair cost + production loss/day x outage",
+  "Sums the cost to the business of one release: environmental clean-up, the repair itself, and lost or deferred production while the line is down. Downtime and repair time overlap, so the longer of the two is used rather than their sum. Financial category bands are company criteria.",
+  "API RP 581 Part 3 (financial consequence: component repair, business interruption / lost production, environmental clean-up); API RP 1160 (consequence factors)."],
+ ["Leak-size category and base CoF",
+  "Leak category from bands "+[S.volB1,S.volB2,S.volB3,S.volB4].join(" / ")+" bbl;   Base CoF = max(financial category, leak-size category)",
+  "Your basis: CoF is driven by leak size and clean-up cost. Taking the maximum stops a large release on a low-cost line from being hidden by an optimistic clean-up estimate. Gas lines enter 0 bbl and are ranked on cost plus escalation.",
+  "API RP 1160 (release volume as a consequence factor); 49 CFR 195.50 (accident reporting release thresholds); API RP 581 Part 3 (release volume categories)."],
+ ["Consequence escalation",
+  "CoF = min(5, max(base + sum of increments, highest floor));   increments: regulated +"+S.eReg+", ESA +"+S.eEsa+", HCA +"+S.eHca+", business critical +"+S.eCrit+", crossing +"+S.eCross,
+  "Your rule: regulated lines, lines near environmentally sensitive areas, lines near HCAs and business-critical lines take high priority. Each flag raises the category; flags stack and the result is capped at 5. Floors (default off) let you force a minimum CoF, for example 4 for any HCA segment. Crossing of a river, creek or road was added because a release there spreads fast and is costly to contain.",
+  "49 CFR 195.450 and 195.452 (hazardous liquid HCAs and integrity management); 49 CFR 192.903 and Subpart O (gas HCAs); 49 CFR 195.6 (unusually sensitive areas - drinking water and ecological); 49 CFR 195.11 / 192.8-192.9 (regulated gathering); API RP 1160; ASME B31.8S section 5."],
+ ["Risk score and matrix",
+  "Risk = LoF x CoF (1-25);   Low < "+S.rMed+", Medium "+S.rMed+"-"+(S.rHigh-1)+", High "+S.rHigh+"-"+(S.rVH-1)+", Very high >= "+S.rVH,
+  "Your basis: likelihood x consequence. Categories rather than raw numbers are multiplied so that one very large cost cannot swamp the likelihood side. Each line is plotted in its cell; position inside the cell comes from where RL_eff and CoF $ (or leak size) fall inside their band on a log scale, for display only.",
+  "ASME B31.8S section 5 (Risk = Probability x Consequence); API RP 1160 section on risk assessment; API RP 580 / 581 Part 1 (risk matrix)."],
+ ["Rank order",
+  "Sort by risk score (descending); ties broken by in-cell position (continuous LoF x continuous CoF)",
+  "Lines with the same score are separated by how deep into their cells they sit, so a line at RL_eff 2.1 yr ranks above one at 4.9 yr in the same LoF 4 cell.",
+  "API RP 1160 (risk ranking to prioritise integrity actions)."],
+ ["Potential impact radius (gas lines, information only)",
+  "r = 0.69 x sqrt(p x d^2)   [ft; p = MAOP psig, d = OD in]",
+  "Shown for gas lines to support the HCA flag: if an identified site or 20+ buildings fall inside this radius the segment could be an HCA. Does not enter the score.",
+  "49 CFR 192.903 (potential impact radius definition); ASME B31.8S section 3.2."]
+ ];
+ document.getElementById("notes").innerHTML=N.map(function(x,i){return '<li id="n'+(i+1)+'"><div class="nt">'+esc(x[0])+'</div><div class="frm">'+esc(x[1])+'</div><div class="why">'+esc(x[2])+'</div><div class="ref"><b>Reference:</b> '+esc(x[3])+'</div></li>'}).join("");
+}
+
+buildSettings(); drawNotes(); select(0);
+})();
+</script>
